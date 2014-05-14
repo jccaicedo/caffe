@@ -5,16 +5,13 @@
 
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 
-#include "boost/python.hpp"
-#include "boost/python/suite/indexing/vector_indexing_suite.hpp"
-#include "numpy/arrayobject.h"
-
-// these need to be included after boost on OS X
-#include <string>  // NOLINT(build/include_order)
-#include <vector>  // NOLINT(build/include_order)
-#include <fstream>  // NOLINT
-
+#include <boost/python.hpp>
+#include <boost/python/suite/indexing/vector_indexing_suite.hpp>
+#include <numpy/arrayobject.h>
 #include "caffe/caffe.hpp"
+
+#include <opencv2/opencv.hpp>
+#include <opencv2/gpu/gpu.hpp>
 
 // Temporary solution for numpy < 1.7 versions: old macro, no promises.
 // You're strongly advised to upgrade to >= 1.7.
@@ -24,7 +21,7 @@
 #endif
 
 
-using namespace caffe;  // NOLINT(build/namespaces)
+using namespace caffe;
 using boost::python::extract;
 using boost::python::len;
 using boost::python::list;
@@ -32,29 +29,30 @@ using boost::python::object;
 using boost::python::handle;
 using boost::python::vector_indexing_suite;
 
-
 // wrap shared_ptr<Blob<float> > in a class that we construct in C++ and pass
 //  to Python
 class CaffeBlob {
  public:
-  CaffeBlob(const shared_ptr<Blob<float> > &blob, const string& name)
-      : blob_(blob), name_(name) {}
 
-  string name() const { return name_; }
+  CaffeBlob(const shared_ptr<Blob<float> > &blob)
+      : blob_(blob) {}
+
+  CaffeBlob()
+  {}
+
   int num() const { return blob_->num(); }
   int channels() const { return blob_->channels(); }
   int height() const { return blob_->height(); }
   int width() const { return blob_->width(); }
   int count() const { return blob_->count(); }
 
-  // this is here only to satisfy boost's vector_indexing_suite
-  bool operator == (const CaffeBlob &other) {
+  bool operator == (const CaffeBlob &other)
+  {
       return this->blob_ == other.blob_;
   }
 
  protected:
   shared_ptr<Blob<float> > blob_;
-  string name_;
 };
 
 
@@ -63,10 +61,14 @@ class CaffeBlob {
 //  is not freed while still being used in Python
 class CaffeBlobWrap : public CaffeBlob {
  public:
+  CaffeBlobWrap(PyObject *p, shared_ptr<Blob<float> > &blob)
+      : CaffeBlob(blob), self_(p) {}
+
   CaffeBlobWrap(PyObject *p, const CaffeBlob &blob)
       : CaffeBlob(blob), self_(p) {}
 
-  object get_data() {
+  object get_data()
+  {
       npy_intp dims[] = {num(), channels(), height(), width()};
 
       PyObject *obj = PyArray_SimpleNewFromData(4, dims, NPY_FLOAT32,
@@ -78,7 +80,8 @@ class CaffeBlobWrap : public CaffeBlob {
       return object(h);
   }
 
-  object get_diff() {
+  object get_diff()
+  {
       npy_intp dims[] = {num(), channels(), height(), width()};
 
       PyObject *obj = PyArray_SimpleNewFromData(4, dims, NPY_FLOAT32,
@@ -95,51 +98,11 @@ class CaffeBlobWrap : public CaffeBlob {
 };
 
 
-class CaffeLayer {
- public:
-  CaffeLayer(const shared_ptr<Layer<float> > &layer, const string &name)
-    : layer_(layer), name_(name) {}
-
-  string name() const { return name_; }
-  vector<CaffeBlob> blobs() {
-    vector<CaffeBlob> result;
-    for (int i = 0; i < layer_->blobs().size(); ++i) {
-      result.push_back(CaffeBlob(layer_->blobs()[i], name_));
-    }
-    return result;
-  }
-
-  // this is here only to satisfy boost's vector_indexing_suite
-  bool operator == (const CaffeLayer &other) {
-      return this->layer_ == other.layer_;
-  }
-
- protected:
-  shared_ptr<Layer<float> > layer_;
-  string name_;
-};
-
 
 // A simple wrapper over CaffeNet that runs the forward process.
-struct CaffeNet {
+struct CaffeNet
+{
   CaffeNet(string param_file, string pretrained_param_file) {
-    // for convenience, check that the input files can be opened, and raise
-    // an exception that boost will send to Python if not
-    // (this function could still crash if the input files are disturbed
-    //  before Net construction)
-    std::ifstream f(param_file.c_str());
-    if (!f.good()) {
-      f.close();
-      throw std::runtime_error("Could not open file " + param_file);
-    }
-    f.close();
-    f.open(pretrained_param_file.c_str());
-    if (!f.good()) {
-      f.close();
-      throw std::runtime_error("Could not open file " + pretrained_param_file);
-    }
-    f.close();
-
     net_.reset(new Net<float>(param_file));
     net_->CopyTrainedLayersFrom(pretrained_param_file);
   }
@@ -158,19 +121,72 @@ struct CaffeNet {
     CHECK_EQ(dims[3], blob->width());
   }
 
+  void InitializeImage(const string& imageName, object meanImg) {
+    // Upload mean image and source image to the GPU
+    dev_mean_image_ = AllocateGpuBlob<float>(1,3,256); // Expected size
+    PyArrayObject* arr = reinterpret_cast<PyArrayObject*>(meanImg.ptr());
+    CUDA_CHECK( cudaMemcpy(dev_mean_image_, PyArray_DATA(arr), sizeof(float) * 256 * 256 * 3, cudaMemcpyHostToDevice) );
+    void* prt = LoadImageToGpuMat(imageName);
+    dev_src_image_ = static_cast<cv::gpu::GpuMat*>(prt);
+  }
+
+  void ReleaseImageData() {
+    CUDA_CHECK(cudaFree(dev_mean_image_));
+    dev_src_image_->release();
+    delete dev_src_image_;
+  }
+
+  void ForwardRegions(list boxes /*, const string& imageName*/){
+    int totalBoxes = len(boxes);
+    vector<Blob<float>*>& input_blobs = net_->input_blobs();
+    // Prepare boxes coordinates
+    int ** data;
+    data = new int*[totalBoxes];
+    for(int j = 0; j < totalBoxes; ++j) {
+      data[j] = new int[4];
+      list box(boxes[j]);
+      for(int k = 0; k < len(box); ++k) {
+        data[j][k] = boost::python::extract<int>(box[k]);
+      }
+    }
+    // Crop and Resize boxes in the GPU
+    float* dev_blob = CropAndResizeBoxes_GpuMat<float>(dev_src_image_, data, totalBoxes, dev_mean_image_);
+    //float* dev_blob = CropAndResizeBoxes_Debug<float>(imageName, data, totalBoxes, dev_mean_image_);
+
+    // Copy data to the network
+    for (int j = 0; j < input_blobs.size(); ++j) {
+      cudaMemcpy(input_blobs[j]->mutable_gpu_data(), dev_blob,
+          sizeof(float) * input_blobs[j]->count(), cudaMemcpyDeviceToDevice);
+    }
+    // Forward the network
+    const vector<Blob<float>*>& output_blobs = net_->ForwardPrefilled();
+    // Download classification scores
+    /* object elem = top[0];
+    PyArrayObject* arr = reinterpret_cast<PyArrayObject*>(elem.ptr());
+    check_array_against_blob(arr, output_blobs[0]);
+    cudaMemcpy(PyArray_DATA(arr), output_blobs[0]->gpu_data(),
+        sizeof(float) * output_blobs[0]->count(), cudaMemcpyDeviceToHost); */
+
+    // Free temporary memory
+    for(int j = 0; j < totalBoxes; ++j) delete data[j];
+    delete data;
+    CUDA_CHECK(cudaFree(dev_blob)); 
+  }
+
   // The actual forward function. It takes in a python list of numpy arrays as
   // input and a python list of numpy arrays as output. The input and output
-  // should all have correct shapes, are single-precisionabcdnt- and
-  // c contiguous.
+  // should all have correct shapes, are single-precisionabcdnt- and c contiguous.
   void Forward(list bottom, list top) {
     vector<Blob<float>*>& input_blobs = net_->input_blobs();
     CHECK_EQ(len(bottom), input_blobs.size());
     CHECK_EQ(len(top), net_->num_outputs());
+
     // First, copy the input
     for (int i = 0; i < input_blobs.size(); ++i) {
       object elem = bottom[i];
       PyArrayObject* arr = reinterpret_cast<PyArrayObject*>(elem.ptr());
       check_array_against_blob(arr, input_blobs[i]);
+
       switch (Caffe::mode()) {
       case Caffe::CPU:
         memcpy(input_blobs[i]->mutable_cpu_data(), PyArray_DATA(arr),
@@ -184,9 +200,9 @@ struct CaffeNet {
         LOG(FATAL) << "Unknown Caffe mode.";
       }  // switch (Caffe::mode())
     }
-    // LOG(INFO) << "Start";
+    //LOG(INFO) << "Start";
     const vector<Blob<float>*>& output_blobs = net_->ForwardPrefilled();
-    // LOG(INFO) << "End";
+    //LOG(INFO) << "End";
     for (int i = 0; i < output_blobs.size(); ++i) {
       object elem = top[i];
       PyArrayObject* arr = reinterpret_cast<PyArrayObject*>(elem.ptr());
@@ -229,9 +245,9 @@ struct CaffeNet {
         LOG(FATAL) << "Unknown Caffe mode.";
       }  // switch (Caffe::mode())
     }
-    // LOG(INFO) << "Start";
+    //LOG(INFO) << "Start";
     net_->Backward();
-    // LOG(INFO) << "End";
+    //LOG(INFO) << "End";
     for (int i = 0; i < input_blobs.size(); ++i) {
       object elem = bottom_diff[i];
       PyArrayObject* arr = reinterpret_cast<PyArrayObject*>(elem.ptr());
@@ -251,10 +267,6 @@ struct CaffeNet {
     }
   }
 
-  void ForwardPrefilled() {
-    net_->ForwardPrefilled();
-  }
-
   // The caffe::Caffe utility functions.
   void set_mode_cpu() { Caffe::set_mode(Caffe::CPU); }
   void set_mode_gpu() { Caffe::set_mode(Caffe::GPU); }
@@ -263,63 +275,56 @@ struct CaffeNet {
   void set_device(int device_id) { Caffe::SetDevice(device_id); }
 
   vector<CaffeBlob> blobs() {
-    vector<CaffeBlob> result;
-    for (int i = 0; i < net_->blobs().size(); ++i) {
-      result.push_back(CaffeBlob(net_->blobs()[i], net_->blob_names()[i]));
-    }
-    return result;
+      return vector<CaffeBlob>(net_->blobs().begin(), net_->blobs().end());
   }
 
-  vector<CaffeLayer> layers() {
-    vector<CaffeLayer> result;
-    for (int i = 0; i < net_->layers().size(); ++i) {
-      result.push_back(CaffeLayer(net_->layers()[i], net_->layer_names()[i]));
-    }
-    return result;
+  vector<CaffeBlob> params() {
+      return vector<CaffeBlob>(net_->params().begin(), net_->params().end());
   }
 
   // The pointer to the internal caffe::Net instant.
-  shared_ptr<Net<float> > net_;
+	shared_ptr<Net<float> > net_;
+        float* dev_mean_image_;
+        cv::gpu::GpuMat* dev_src_image_;
+       
 };
 
 
 
 // The boost python module definition.
-BOOST_PYTHON_MODULE(_caffe) {
+BOOST_PYTHON_MODULE(pycaffe)
+{
+
   boost::python::class_<CaffeNet>(
       "CaffeNet", boost::python::init<string, string>())
-      .def("Forward",          &CaffeNet::Forward)
-      .def("ForwardPrefilled", &CaffeNet::ForwardPrefilled)
-      .def("Backward",         &CaffeNet::Backward)
-      .def("set_mode_cpu",     &CaffeNet::set_mode_cpu)
-      .def("set_mode_gpu",     &CaffeNet::set_mode_gpu)
-      .def("set_phase_train",  &CaffeNet::set_phase_train)
-      .def("set_phase_test",   &CaffeNet::set_phase_test)
-      .def("set_device",       &CaffeNet::set_device)
-      .add_property("blobs",   &CaffeNet::blobs)
-      .add_property("layers",  &CaffeNet::layers);
+      .def("Forward",         &CaffeNet::Forward)
+      .def("ForwardRegions",  &CaffeNet::ForwardRegions)
+      .def("InitializeImage", &CaffeNet::InitializeImage)
+      .def("ReleaseImageData",&CaffeNet::ReleaseImageData)
+      .def("Backward",        &CaffeNet::Backward)
+      .def("set_mode_cpu",    &CaffeNet::set_mode_cpu)
+      .def("set_mode_gpu",    &CaffeNet::set_mode_gpu)
+      .def("set_phase_train", &CaffeNet::set_phase_train)
+      .def("set_phase_test",  &CaffeNet::set_phase_test)
+      .def("set_device",      &CaffeNet::set_device)
+      .def("blobs",           &CaffeNet::blobs)
+      .def("params",          &CaffeNet::params)
+  ;
 
   boost::python::class_<CaffeBlob, CaffeBlobWrap>(
       "CaffeBlob", boost::python::no_init)
-      .add_property("name",     &CaffeBlob::name)
       .add_property("num",      &CaffeBlob::num)
       .add_property("channels", &CaffeBlob::channels)
       .add_property("height",   &CaffeBlob::height)
       .add_property("width",    &CaffeBlob::width)
       .add_property("count",    &CaffeBlob::count)
       .add_property("data",     &CaffeBlobWrap::get_data)
-      .add_property("diff",     &CaffeBlobWrap::get_diff);
-
-  boost::python::class_<CaffeLayer>(
-      "CaffeLayer", boost::python::no_init)
-      .add_property("name",  &CaffeLayer::name)
-      .add_property("blobs", &CaffeLayer::blobs);
+      .add_property("diff",     &CaffeBlobWrap::get_diff)
+  ;
 
   boost::python::class_<vector<CaffeBlob> >("BlobVec")
       .def(vector_indexing_suite<vector<CaffeBlob>, true>());
 
-  boost::python::class_<vector<CaffeLayer> >("LayerVec")
-      .def(vector_indexing_suite<vector<CaffeLayer>, true>());
-
   import_array();
+
 }

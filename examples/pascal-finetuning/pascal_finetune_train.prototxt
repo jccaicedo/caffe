@@ -3,7 +3,7 @@ layers {
   layer {
     name: "data"
     type: "window_data"
-    source: "window_file_2007_trainval.txt"
+    source: "window_file_voc_2012_train.txt"
     meanfile: "../../data/ilsvrc12/imagenet_mean.binaryproto"
     batchsize: 128
     cropsize: 227
@@ -340,6 +340,8 @@ layers {
 }
 layers {
   layer {
+    # We name this fc8_pascal so that the initialization
+    # network doesn't populate this layer with its fc8
     name: "fc8_pascal"
     type: "innerproduct"
     num_output: 21
