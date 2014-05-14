@@ -5,20 +5,21 @@ from disk, using the imagenet classifier.
 
 import numpy as np
 import os
-from skimage import io
+#from skimage import io
+import Image
 from skimage import transform
 
 import caffe
 
-IMAGE_DIM = 256
-CROPPED_DIM = 227
+#IMAGE_DIM = 256
+#CROPPED_DIM = 227
 
 # Load the imagenet mean file
-IMAGENET_MEAN = np.load(
-    os.path.join(os.path.dirname(__file__), 'ilsvrc_2012_mean.npy'))
+#IMAGENET_MEAN = np.load(
+#    os.path.join(os.path.dirname(__file__), 'ilsvrc_2012_mean.npy'))
 
 
-def oversample(image, center_only=False):
+def oversample(image, center_only=False, IMAGE_DIM=256, CROPPED_DIM=227):
   """
   Oversamples an image. Currently the indices are hard coded to the
   4 corners and the center of the image, as well as their flipped ones,
@@ -52,8 +53,9 @@ def oversample(image, center_only=False):
     return images
 
 
-def prepare_image(filename, center_only=False):
-  img = io.imread(filename)
+def prepare_image(filename, IMAGENET_MEAN, center_only=False, IMAGE_DIM=256, CROPPED_DIM=227):
+  #img = io.imread(filename)
+  img = np.array(Image.open(filename))
   if img.ndim == 2:
     img = np.tile(img[:, :, np.newaxis], (1, 1, 3))
   elif img.shape[2] == 4:
@@ -62,7 +64,7 @@ def prepare_image(filename, center_only=False):
   img_reshape = (transform.resize(img, (IMAGE_DIM,IMAGE_DIM)) * 255)[:, :, ::-1]
   # subtract main
   img_reshape -= IMAGENET_MEAN
-  return oversample(img_reshape, center_only)
+  return oversample(img_reshape, center_only, IMAGE_DIM, CROPPED_DIM)
 
 
 class ImageNetClassifier(object):
@@ -71,21 +73,25 @@ class ImageNetClassifier(object):
   of models trained on imagenet.
   """
   def __init__(self, model_def_file, pretrained_model, center_only=False,
-               num_output=1000):
+               num_output=1000, IMAGE_DIM=256, CROPPED_DIM=227, MEAN_IMAGE=None):
+    self._IMAGE_DIM = IMAGE_DIM
+    self._CROPPED_DIM = CROPPED_DIM
+    if MEAN_IMAGE == None:
+      MEAN_IMAGE = os.path.join(os.path.dirname(__file__), 'ilsvrc_2012_mean.npy')
     if center_only:
       num = 1
     else:
       num = 10
-    self.caffenet = caffe.Net(model_def_file, pretrained_model)
-    self._output_blobs = [np.empty((num, num_output, 1, 1), dtype=np.float32)]
+    self.caffenet = caffe.CaffeNet(model_def_file, pretrained_model)
+    self._output_blobs = [np.zeros((num, num_output, 1, 1), dtype=np.float32)]
     self._center_only = center_only
+    self._IMAGENET_MEAN = np.load(MEAN_IMAGE)
 
   def predict(self, filename):
-    input_blob = [prepare_image(filename, self._center_only)]
+    input_blob = [prepare_image(filename, self._IMAGENET_MEAN, self._center_only, self._IMAGE_DIM, self._CROPPED_DIM)]
     self.caffenet.Forward(input_blob, self._output_blobs)
     return self._output_blobs[0].mean(0).flatten()
-
-
+    
 def main(argv):
   """
   The main function will carry out classification.

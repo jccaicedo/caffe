@@ -658,6 +658,41 @@ class WindowDataLayer : public Layer<Dtype> {
 };
 
 
+// This function is used to create a pthread that prefetches the data.
+template <typename Dtype>
+void* NoLevelDBDataLayerPrefetch(void* layer_pointer);
+
+template <typename Dtype>
+class NoLevelDBDataLayer : public Layer<Dtype> {
+  // The function used to perform prefetching.
+  friend void* NoLevelDBDataLayerPrefetch<Dtype>(void* layer_pointer);
+
+ public:
+  explicit NoLevelDBDataLayer(const LayerParameter& param)
+      : Layer<Dtype>(param) {}
+  virtual ~NoLevelDBDataLayer();
+  virtual void SetUp(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+
+ protected:
+  virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+  virtual void Forward_gpu(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+  virtual Dtype Backward_cpu(const vector<Blob<Dtype>*>& top,
+      const bool propagate_down, vector<Blob<Dtype>*>* bottom);
+  virtual Dtype Backward_gpu(const vector<Blob<Dtype>*>& top,
+      const bool propagate_down, vector<Blob<Dtype>*>* bottom);
+
+  pthread_t thread_;
+  shared_ptr<Blob<Dtype> > prefetch_data_;
+  shared_ptr<Blob<Dtype> > prefetch_label_;
+  Blob<Dtype> data_mean_;
+  vector<std::pair<std::string, int > > image_database_; // image-label pairs
+
+};
+
+
 }  // namespace caffe
 
 #endif  // CAFFE_VISION_LAYERS_HPP_

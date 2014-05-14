@@ -96,7 +96,7 @@ LIBRARIES := cudart cublas curand \
 	boost_system \
 	hdf5_hl hdf5 \
 	opencv_core opencv_highgui opencv_imgproc
-PYTHON_LIBRARIES := boost_python python2.7
+PYTHON_LIBRARIES := boost_python python2.6
 WARNINGS := -Wall
 
 COMMON_FLAGS := -DNDEBUG -O2 $(foreach includedir,$(INCLUDE_DIRS),-I$(includedir))

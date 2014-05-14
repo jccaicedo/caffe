@@ -125,6 +125,11 @@ message LayerParameter {
   // the other dimensions must be the same for all the bottom blobs.
   // By default it will concatenate blobs along the channels dimension.
   optional uint32 concat_dim = 65 [default = 1];
+
+  // Number of image channels at the input
+  // (used only by the noleveldb_data_layer)
+  optional uint32 img_channels = 66 [default = 3];
+
 }
 
 message LayerConnection {
