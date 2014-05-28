@@ -161,11 +161,12 @@ struct CaffeNet {
     CHECK_EQ(dims[3], blob->width());
   }
 
-  list InitializeImage(const string& imageName, object meanImg) {
+  list InitializeImage(const string& imageName, int imageSize, object meanImg, int cropsize) {
     // Upload mean image and source image to the GPU
-    dev_mean_image_ = AllocateGpuBlob<float>(1,3,256); // Expected size
+    dev_mean_image_ = AllocateGpuBlob<float>(1,3,imageSize); // Expected size
+    cropsize_ = cropsize;
     PyArrayObject* arr = reinterpret_cast<PyArrayObject*>(meanImg.ptr());
-    CUDA_CHECK( cudaMemcpy(dev_mean_image_, PyArray_DATA(arr), sizeof(float) * 256 * 256 * 3, cudaMemcpyHostToDevice) );
+    CUDA_CHECK( cudaMemcpy(dev_mean_image_, PyArray_DATA(arr), sizeof(float) * imageSize * imageSize * 3, cudaMemcpyHostToDevice) );
     void* prt = LoadImageToGpuMat(imageName);
     dev_src_image_ = static_cast<cv::gpu::GpuMat*>(prt);
     list dims;
@@ -194,8 +195,8 @@ struct CaffeNet {
       }
     }
     // Crop and Resize boxes in the GPU
-    float* dev_blob = CropAndResizeBoxes_GpuMat<float>(dev_src_image_, data, totalBoxes, context_pad, dev_mean_image_);
-    //float* dev_blob = CropAndResizeBoxes_Debug<float>(imageName, data, totalBoxes, context_pad, dev_mean_image_);
+    float* dev_blob = CropAndResizeBoxes_GpuMat<float>(dev_src_image_, data, totalBoxes, context_pad, cropsize_, dev_mean_image_);
+    //float* dev_blob = CropAndResizeBoxes_Debug<float>(imageName, data, totalBoxes, context_pad, cropsize_, dev_mean_image_);
 
     // Copy data to the network
     for (int j = 0; j < input_blobs.size(); ++j) {
@@ -341,6 +342,7 @@ struct CaffeNet {
   shared_ptr<Net<float> > net_;
   // Pointers to mean image and source image in the GPU
   float* dev_mean_image_;
+  int cropsize_;
   cv::gpu::GpuMat* dev_src_image_;
 };
 
