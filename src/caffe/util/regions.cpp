@@ -15,8 +15,8 @@ using std::string;
 namespace caffe {
 
 template <typename Dtype>
-cv::gpu::GpuMat CropImage(cv::gpu::GpuMat* cv_img, int x1, int y1, int x2, int y2, bbox & padding) {
-      const int context_pad = 16;
+cv::gpu::GpuMat CropImage(cv::gpu::GpuMat* cv_img, int x1, int y1, int x2, int y2, int context_pad, bbox & padding) {
+      //const int context_pad = 16;
       bool use_square = false;
       int cropsize = 227;
       cv::Size cv_crop_size(cropsize, cropsize);
@@ -124,8 +124,8 @@ Dtype* AllocateGpuBlob(int regions, int channels, int cropsize) {
 
 // Load an image from disk to the GPU
 void* LoadImageToGpuMat(const string& imageName) {
-  LOG(INFO) << "Cropping and resizing regions for image " << imageName;
   cv::Mat src_host = cv::imread(imageName, CV_LOAD_IMAGE_COLOR);
+  LOG(INFO) << "Cropping and resizing regions for image " << imageName << " (" << src_host.rows << "x" << src_host.cols << ")";
   cv::gpu::GpuMat* src = new cv::gpu::GpuMat();
   src->upload(src_host);
   return static_cast<void*>(src);
@@ -134,12 +134,12 @@ void* LoadImageToGpuMat(const string& imageName) {
 // Crop and resize regions in the GPU
 template <typename Dtype> 
 Dtype* CropAndResizeBoxes_GpuMat(void* srcPrt, int ** boxes,
-                              int totalBoxes, const Dtype* meanImg) {
+                              int totalBoxes, int context_pad, const Dtype* meanImg) {
   cv::gpu::GpuMat* src = static_cast<cv::gpu::GpuMat*>(srcPrt);
   Dtype* dev_blob = AllocateGpuBlob<Dtype>(totalBoxes, 3, 227);
   for(int i = 0; i < totalBoxes; ++i) {
     bbox pad;
-    cv::gpu::GpuMat dev_crop = CropImage<Dtype>(src, boxes[i][0], boxes[i][1], boxes[i][2], boxes[i][3], pad);
+    cv::gpu::GpuMat dev_crop = CropImage<Dtype>(src, boxes[i][0], boxes[i][1], boxes[i][2], boxes[i][3], context_pad, pad);
     copyRegionToBlob<Dtype>(dev_crop.data, dev_blob, dev_crop.step, i, dev_crop.rows, dev_crop.cols, 3, 227, meanImg, pad);
   }
   return dev_blob;
@@ -147,19 +147,19 @@ Dtype* CropAndResizeBoxes_GpuMat(void* srcPrt, int ** boxes,
 
 // Explicit instantiation
 template float* CropAndResizeBoxes_GpuMat<float>(void* src /*const string& imageName*/, int ** boxes, 
-                                   int totalBoxes, const float* meanImg);
+                                   int totalBoxes, int context_pad, const float* meanImg);
 
 
 // Explicit instantiation
 template float* CropAndResizeBoxes_Debug<float>(const string& imageName, int ** boxes, 
-                                   int totalBoxes, const float* meanImg);
+                                   int totalBoxes, int context_pad, const float* meanImg);
 
 template float* AllocateGpuBlob(int regions, int channels, int cropsize);
 
 // Auxiliary debugging function
 template <typename Dtype>
 Dtype* CropAndResizeBoxes_Debug(const string& imageName, int ** boxes, 
-                          int totalBoxes, const Dtype* meanImg) {
+                          int totalBoxes, int context_pad, const Dtype* meanImg) {
   void* prt = LoadImageToGpuMat(imageName);
   cv::gpu::GpuMat* src = static_cast<cv::gpu::GpuMat*>(prt);
   Dtype* dev_blob = AllocateGpuBlob<Dtype>(totalBoxes, 3, 227);
@@ -176,16 +176,16 @@ Dtype* CropAndResizeBoxes_Debug(const string& imageName, int ** boxes,
   // The real job
   for(int i = 0; i < totalBoxes; ++i) {
     bbox pad;
-    cv::gpu::GpuMat dev_crop = CropImage<Dtype>(src, boxes[i][0], boxes[i][1], boxes[i][2], boxes[i][3], pad);
+    cv::gpu::GpuMat dev_crop = CropImage<Dtype>(src, boxes[i][0], boxes[i][1], boxes[i][2], boxes[i][3], context_pad, pad);
 
-    if(pad.x1 + pad.x2 + pad.y1 + pad.y2 > 0){
+    //if(pad.x1 + pad.x2 + pad.y1 + pad.y2 > 0){
     cv::Mat dst_host(dev_crop);
     unsigned pos = imageName.find(".jpg") - 5;
     std::stringstream outf;
-    outf << "/home/caicedo/what/out_" << imageName.substr(pos) << "." << boxes[i][0] << boxes[i][1] << boxes[i][2] << boxes[i][3] << ".jpg";
+    outf << "/home/caicedo/what/out_" << imageName.substr(pos) << "." << boxes[i][0] << "_" << boxes[i][1] << "_" << boxes[i][2] << "_" << boxes[i][3] << ".jpg";
     LOG(INFO) << "Box:" << boxes[i][0] << "," << boxes[i][1] << "," << boxes[i][2] << "," << boxes[i][3] << " Pad" << pad.x1 << "," << pad.y1 << "," << pad.x2 << "," << pad.y2;
     cv::imwrite(outf.str(), dst_host);
-    }
+    //}
 
     copyRegionToBlob<Dtype>(dev_crop.data, dev_blob, dev_crop.step, i, dev_crop.rows, dev_crop.cols, 3, 227, meanImg, pad);
   }

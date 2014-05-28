@@ -23,11 +23,11 @@ void* LoadImageToGpuMat(const string& imageName);
 
 template <typename Dtype>
 Dtype* CropAndResizeBoxes_GpuMat(void* srcPrt, int ** boxes,
-                              int totalBoxes, const Dtype* meanImg);
+                              int totalBoxes, int context_pad, const Dtype* meanImg);
 
 template <typename Dtype>
 Dtype* CropAndResizeBoxes_Debug(const string& img, int ** boxes,
-                              int totalBoxes, const Dtype* meanImg);
+                              int totalBoxes, int context_pad, const Dtype* meanImg);
 
 
 template <typename Dtype>
