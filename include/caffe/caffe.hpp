@@ -14,6 +14,7 @@
 #include "caffe/util/io.hpp"
 #include "caffe/vision_layers.hpp"
 #include "caffe/util/regions.hpp"
+#include "caffe/q_layer.hpp"
 
 #include "caffe/proto/caffe.pb.h"
 

@@ -692,6 +692,43 @@ class NoLevelDBDataLayer : public Layer<Dtype> {
 
 };
 
+// This function is used to create a pthread that prefetches the window data.
+template <typename Dtype>
+void* QDataLayerPrefetch(void* layer_pointer);
+
+template <typename Dtype>
+class QDataLayer : public Layer<Dtype> {
+  // The function used to perform prefetching.
+  friend void* QDataLayerPrefetch<Dtype>(void* layer_pointer);
+
+ public:
+  explicit QDataLayer(const LayerParameter& param)
+      : Layer<Dtype>(param) {}
+  virtual ~QDataLayer();
+  virtual void SetUp(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+
+ protected:
+  virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+  virtual void Forward_gpu(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+  virtual Dtype Backward_cpu(const vector<Blob<Dtype>*>& top,
+      const bool propagate_down, vector<Blob<Dtype>*>* bottom);
+  virtual Dtype Backward_gpu(const vector<Blob<Dtype>*>& top,
+      const bool propagate_down, vector<Blob<Dtype>*>* bottom);
+
+  pthread_t thread_;
+  shared_ptr<Blob<Dtype> > prefetch_data_;
+  shared_ptr<Blob<Dtype> > prefetch_label_;
+  Blob<Dtype> data_mean_;
+  vector<std::pair<std::string, vector<int> > > image_database_;
+  enum QField { IMAGE_INDEX, ACTION, REWARD, DISCOUNTEDMAXQ, X1, Y1, X2, Y2, NUM };
+  vector<vector<float> > fg_windows_;
+  vector<vector<float> > bg_windows_;
+};
+
+
 
 }  // namespace caffe
 

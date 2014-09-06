@@ -7,6 +7,7 @@
 
 #include "caffe/layer.hpp"
 #include "caffe/vision_layers.hpp"
+#include "caffe/q_layer.hpp"
 #include "caffe/proto/caffe.pb.h"
 
 
@@ -69,6 +70,10 @@ Layer<Dtype>* GetLayer(const LayerParameter& param) {
     return new WindowDataLayer<Dtype>(param);
   } else if (type == "noleveldb_data") {
     return new NoLevelDBDataLayer<Dtype>(param);
+  } else if (type == "Q") {
+    return new QLearningLayer<Dtype>(param);
+  } else if (type == "Q_loss") {
+    return new QLearningWithLossLayer<Dtype>(param);
   } else {
     LOG(FATAL) << "Unknown layer name: " << type;
   }

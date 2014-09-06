@@ -1,4 +1,4 @@
-// Copyright 2013 Ross Girshick
+// QDataLayer: based on window_data_layer.cpp by Ross Girshick
 //
 // Based on data_layer.cpp by Yangqing Jia.
 
@@ -31,9 +31,9 @@ using std::pair;
 namespace caffe {
 
 template <typename Dtype>
-void* WindowDataLayerPrefetch(void* layer_pointer) {
-  WindowDataLayer<Dtype>* layer =
-      reinterpret_cast<WindowDataLayer<Dtype>*>(layer_pointer);
+void* QDataLayerPrefetch(void* layer_pointer) {
+  QDataLayer<Dtype>* layer =
+      reinterpret_cast<QDataLayer<Dtype>*>(layer_pointer);
 
   // At each iteration, sample N windows where N*p are foreground (object)
   // windows and N*(1-p) are background (non-object) windows
@@ -81,7 +81,7 @@ void* WindowDataLayerPrefetch(void* layer_pointer) {
 
       // load the image containing the window
       pair<std::string, vector<int> > image =
-          layer->image_database_[window[WindowDataLayer<Dtype>::IMAGE_INDEX]];
+          layer->image_database_[window[QDataLayer<Dtype>::IMAGE_INDEX]];
 
       cv::Mat cv_img = cv::imread(image.first, CV_LOAD_IMAGE_COLOR);
       if (!cv_img.data) {
@@ -91,10 +91,10 @@ void* WindowDataLayerPrefetch(void* layer_pointer) {
       const int channels = cv_img.channels();
 
       // crop window out of image and warp it
-      int x1 = window[WindowDataLayer<Dtype>::X1];
-      int y1 = window[WindowDataLayer<Dtype>::Y1];
-      int x2 = window[WindowDataLayer<Dtype>::X2];
-      int y2 = window[WindowDataLayer<Dtype>::Y2];
+      int x1 = window[QDataLayer<Dtype>::X1];
+      int y1 = window[QDataLayer<Dtype>::Y1];
+      int x2 = window[QDataLayer<Dtype>::X2];
+      int y2 = window[QDataLayer<Dtype>::Y2];
 
       int pad_w = 0;
       int pad_h = 0;
@@ -207,7 +207,9 @@ void* WindowDataLayerPrefetch(void* layer_pointer) {
       }
 
       // get window label
-      top_label[itemid] = window[WindowDataLayer<Dtype>::LABEL];
+      top_label[itemid*3 + 0] = window[QDataLayer<Dtype>::ACTION];
+      top_label[itemid*3 + 1] = window[QDataLayer<Dtype>::REWARD];
+      top_label[itemid*3 + 2] = window[QDataLayer<Dtype>::DISCOUNTEDMAXQ];
 
       #if 0
       // useful debugging code for dumping transformed windows to disk
@@ -219,12 +221,12 @@ void* WindowDataLayerPrefetch(void* layer_pointer) {
       std::ofstream inf((string("dump/") + file_id +
           string("_info.txt")).c_str(), std::ofstream::out);
       inf << image.first << std::endl
-          << window[WindowDataLayer<Dtype>::X1]+1 << std::endl
-          << window[WindowDataLayer<Dtype>::Y1]+1 << std::endl
-          << window[WindowDataLayer<Dtype>::X2]+1 << std::endl
-          << window[WindowDataLayer<Dtype>::Y2]+1 << std::endl
+          << window[QDataLayer<Dtype>::X1]+1 << std::endl
+          << window[QDataLayer<Dtype>::Y1]+1 << std::endl
+          << window[QDataLayer<Dtype>::X2]+1 << std::endl
+          << window[QDataLayer<Dtype>::Y2]+1 << std::endl
           << do_mirror << std::endl
-          << top_label[itemid] << std::endl
+          << top_label[itemid][0] << std::endl
           << is_fg << std::endl;
       inf.close();
       std::ofstream top_data_file((string("dump/") + file_id +
@@ -251,20 +253,20 @@ void* WindowDataLayerPrefetch(void* layer_pointer) {
 }
 
 template <typename Dtype>
-WindowDataLayer<Dtype>::~WindowDataLayer<Dtype>() {
+QDataLayer<Dtype>::~QDataLayer<Dtype>() {
   CHECK(!pthread_join(thread_, NULL)) << "Pthread joining failed.";
 }
 
 template <typename Dtype>
-void WindowDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
+void QDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
       vector<Blob<Dtype>*>* top) {
   // SetUp runs through the window_file and creates two structures
   // that hold windows: one for foreground (object) windows and one
   // for background (non-object) windows. We use an overlap threshold
   // to decide which is which.
 
-  CHECK_EQ(bottom.size(), 0) << "Window data Layer takes no input blobs.";
-  CHECK_EQ(top->size(), 2) << "Window data Layer prodcues two blobs as output.";
+  CHECK_EQ(bottom.size(), 0) << "Q data Layer takes no input blobs.";
+  CHECK_EQ(top->size(), 2) << "Q data Layer prodcues two blobs as output.";
 
   // window_file format
   // repeated:
@@ -276,7 +278,7 @@ void WindowDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
   //    num_windows
   //    class_index overlap x1 y1 x2 y2
 
-  LOG(INFO) << "Window data layer:" << std::endl
+  LOG(INFO) << "Q data layer:" << std::endl
       << "  foreground (object) overlap threshold: "
       << this->layer_param_.det_fg_threshold() << std::endl
       << "  background (non-object) overlap threshold: "
@@ -308,33 +310,34 @@ void WindowDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
     int num_windows;
     infile >> num_windows;
     for (int i = 0; i < num_windows; ++i) {
-      int label, x1, y1, x2, y2;
-      float overlap;
-      infile >> label >> overlap >> x1 >> y1 >> x2 >> y2;
+      int action, x1, y1, x2, y2;
+      float reward, discountedMaxQ;
+      infile >> action >> reward >> discountedMaxQ >> x1 >> y1 >> x2 >> y2;
 
-      vector<float> window(WindowDataLayer::NUM);
-      window[WindowDataLayer::IMAGE_INDEX] = image_index;
-      window[WindowDataLayer::LABEL] = label;
-      window[WindowDataLayer::OVERLAP] = overlap;
-      window[WindowDataLayer::X1] = x1;
-      window[WindowDataLayer::Y1] = y1;
-      window[WindowDataLayer::X2] = x2;
-      window[WindowDataLayer::Y2] = y2;
+      vector<float> window(QDataLayer::NUM);
+      window[QDataLayer::IMAGE_INDEX] = image_index;
+      window[QDataLayer::ACTION] = action;
+      window[QDataLayer::REWARD] = reward;
+      window[QDataLayer::DISCOUNTEDMAXQ] = discountedMaxQ;
+      window[QDataLayer::X1] = x1;
+      window[QDataLayer::Y1] = y1;
+      window[QDataLayer::X2] = x2;
+      window[QDataLayer::Y2] = y2;
 
       // add window to foreground list or background list
-      if (overlap >= this->layer_param_.det_fg_threshold()) {
-        int label = window[WindowDataLayer::LABEL];
+      //if (overlap >= this->layer_param_.det_fg_threshold()) {
+        int label = window[QDataLayer::ACTION];
         CHECK_GT(label, -1);
         fg_windows_.push_back(window);
         label_hist.insert(std::make_pair(label, 0));
         label_hist[label]++;
-      } else if (overlap < this->layer_param_.det_bg_threshold()) {
+      /*} else if (overlap < this->layer_param_.det_bg_threshold()) {
         // background window, force label and overlap to 0
-        window[WindowDataLayer::LABEL] = 0;
-        window[WindowDataLayer::OVERLAP] = 0;
+        window[QDataLayer::ACTION] = 0;
+        window[QDataLayer::REWARD] = 0;
         bg_windows_.push_back(window);
         label_hist[0]++;
-      }
+      }*/
     }
 
     if (image_index % 100 == 0) {
@@ -371,10 +374,10 @@ void WindowDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
   LOG(INFO) << "output data size: " << (*top)[0]->num() << ","
       << (*top)[0]->channels() << "," << (*top)[0]->height() << ","
       << (*top)[0]->width();
-  // label
-  (*top)[1]->Reshape(this->layer_param_.batchsize(), 1, 1, 1);
+  // Structured label: Action, Reward, NextMaxQ
+  (*top)[1]->Reshape(this->layer_param_.batchsize(), 3, 1, 1);
   prefetch_label_.reset(
-      new Blob<Dtype>(this->layer_param_.batchsize(), 1, 1, 1));
+      new Blob<Dtype>(this->layer_param_.batchsize(), 3, 1, 1));
 
   // check if we want to have mean
   if (this->layer_param_.has_meanfile()) {
@@ -397,13 +400,13 @@ void WindowDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
   prefetch_label_->mutable_cpu_data();
   data_mean_.cpu_data();
   DLOG(INFO) << "Initializing prefetch";
-  CHECK(!pthread_create(&thread_, NULL, WindowDataLayerPrefetch<Dtype>,
+  CHECK(!pthread_create(&thread_, NULL, QDataLayerPrefetch<Dtype>,
       reinterpret_cast<void*>(this))) << "Pthread execution failed.";
   DLOG(INFO) << "Prefetch initialized.";
 }
 
 template <typename Dtype>
-void WindowDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+void QDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       vector<Blob<Dtype>*>* top) {
   // First, join the thread
   CHECK(!pthread_join(thread_, NULL)) << "Pthread joining failed.";
@@ -413,12 +416,12 @@ void WindowDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   memcpy((*top)[1]->mutable_cpu_data(), prefetch_label_->cpu_data(),
       sizeof(Dtype) * prefetch_label_->count());
   // Start a new prefetch thread
-  CHECK(!pthread_create(&thread_, NULL, WindowDataLayerPrefetch<Dtype>,
+  CHECK(!pthread_create(&thread_, NULL, QDataLayerPrefetch<Dtype>,
       reinterpret_cast<void*>(this))) << "Pthread execution failed.";
 }
 
 template <typename Dtype>
-void WindowDataLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
+void QDataLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
       vector<Blob<Dtype>*>* top) {
   // First, join the thread
   CHECK(!pthread_join(thread_, NULL)) << "Pthread joining failed.";
@@ -430,23 +433,23 @@ void WindowDataLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
       prefetch_label_->cpu_data(), sizeof(Dtype) * prefetch_label_->count(),
       cudaMemcpyHostToDevice));
   // Start a new prefetch thread
-  CHECK(!pthread_create(&thread_, NULL, WindowDataLayerPrefetch<Dtype>,
+  CHECK(!pthread_create(&thread_, NULL, QDataLayerPrefetch<Dtype>,
       reinterpret_cast<void*>(this))) << "Pthread execution failed.";
 }
 
 // The backward operations are dummy - they do not carry any computation.
 template <typename Dtype>
-Dtype WindowDataLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
+Dtype QDataLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
       const bool propagate_down, vector<Blob<Dtype>*>* bottom) {
   return Dtype(0.);
 }
 
 template <typename Dtype>
-Dtype WindowDataLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
+Dtype QDataLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       const bool propagate_down, vector<Blob<Dtype>*>* bottom) {
   return Dtype(0.);
 }
 
-INSTANTIATE_CLASS(WindowDataLayer);
+INSTANTIATE_CLASS(QDataLayer);
 
 }  // namespace caffe
