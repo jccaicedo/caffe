@@ -58,20 +58,14 @@ void* QDataLayerPrefetch(void* layer_pointer) {
   // zero out batch
   memset(top_data, 0, sizeof(Dtype)*layer->prefetch_data_->count());
 
-  const int num_fg = static_cast<int>(static_cast<float>(batchsize)
-      * fg_fraction);
-  const int num_samples[2] = { batchsize - num_fg, num_fg };
+  /*const int num_fg = static_cast<int>(static_cast<float>(batchsize)
+      * fg_fraction);*/
 
   int itemid = 0;
   // sample from bg set then fg set
-  for (int is_fg = 0; is_fg < 2; ++is_fg) {
-    for (int dummy = 0; dummy < num_samples[is_fg]; ++dummy) {
+  for (int dummy = 0; dummy < batchsize; ++dummy) {
       // sample a window
-      vector<float> window = (is_fg)
-          // NOLINT_NEXT_LINE(runtime/threadsafe_fn)
-          ? layer->fg_windows_[rand() % layer->fg_windows_.size()]
-          // NOLINT_NEXT_LINE(runtime/threadsafe_fn)
-          : layer->bg_windows_[rand() % layer->bg_windows_.size()];
+      vector<float> window = layer->windows_[rand() % layer->windows_.size()];
 
       bool do_mirror = false;
       // NOLINT_NEXT_LINE(runtime/threadsafe_fn)
@@ -246,7 +240,6 @@ void* QDataLayerPrefetch(void* layer_pointer) {
       #endif
 
       itemid++;
-    }
   }
 
   return reinterpret_cast<void*>(NULL);
@@ -324,20 +317,12 @@ void QDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
       window[QDataLayer::X2] = x2;
       window[QDataLayer::Y2] = y2;
 
-      // add window to foreground list or background list
-      //if (overlap >= this->layer_param_.det_fg_threshold()) {
-        int label = window[QDataLayer::ACTION];
-        CHECK_GT(label, -1);
-        fg_windows_.push_back(window);
-        label_hist.insert(std::make_pair(label, 0));
-        label_hist[label]++;
-      /*} else if (overlap < this->layer_param_.det_bg_threshold()) {
-        // background window, force label and overlap to 0
-        window[QDataLayer::ACTION] = 0;
-        window[QDataLayer::REWARD] = 0;
-        bg_windows_.push_back(window);
-        label_hist[0]++;
-      }*/
+      // add window to list
+      int label = window[QDataLayer::ACTION];
+      CHECK_GT(label, -1);
+      windows_.push_back(window);
+      label_hist.insert(std::make_pair(label, 0));
+      label_hist[label]++;
     }
 
     if (image_index % 100 == 0) {

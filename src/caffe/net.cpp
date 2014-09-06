@@ -62,6 +62,7 @@ void Net<Dtype>::Init(const NetParameter& in_param) {
   DLOG(INFO) << "Memory required for Data" << memory_used*sizeof(Dtype);
   // For each layer, set up their input and output
   bottom_vecs_.resize(param.layers_size());
+  DLOG(INFO) << "BottomVecs resized to param.layers_size(): " << param.layers_size();
   top_vecs_.resize(param.layers_size());
   bottom_id_vecs_.resize(param.layers_size());
   top_id_vecs_.resize(param.layers_size());

@@ -37,26 +37,17 @@ void QLearningLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   int num = bottom[0]->num();
   int dim = bottom[0]->count() / bottom[0]->num();
   memcpy(top_data, bottom_data, sizeof(Dtype) * bottom[0]->count());
-  // we need to subtract the max to avoid numerical issues, compute the exp,
-  // and then normalize.
-  //for (int i = 0; i < num; ++i) {
-  //  scale_data[i] = bottom_data[i*dim];
-  //  for (int j = 0; j < dim; ++j) {
-  //    scale_data[i] = max(scale_data[i], bottom_data[i * dim + j]);
-  //  }
-  //}
-  // subtraction
-  //caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, num, dim, 1, -1.,
-  //  scale_data, sum_multiplier_.cpu_data(), 1., top_data);
-  // Perform exponentiation
-  //caffe_exp<Dtype>(num * dim, top_data, top_data);
-  // sum after exp
-  //caffe_cpu_gemv<Dtype>(CblasNoTrans, num, dim, 1., top_data,
-  //    sum_multiplier_.cpu_data(), 0., scale_data);
+  // we need to divide by the absmax to avoid numerical issues
+  for (int i = 0; i < num; ++i) {
+    scale_data[i] = abs(bottom_data[i*dim]);
+    for (int j = 0; j < dim; ++j) {
+      scale_data[i] = max(scale_data[i], abs(bottom_data[i * dim + j]));
+    }
+  }
   // Do division
-  //for (int i = 0; i < num; ++i) {
-  //  caffe_scal<Dtype>(dim, Dtype(1.) / scale_data[i], top_data + i * dim);
-  //}
+  for (int i = 0; i < num; ++i) {
+    caffe_scal<Dtype>(dim, Dtype(1.) / scale_data[i], top_data + i * dim);
+  }
 }
 
 template <typename Dtype>
@@ -70,16 +61,9 @@ Dtype QLearningLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   int num = top[0]->num();
   int dim = top[0]->count() / top[0]->num();
   memcpy(bottom_diff, top_diff, sizeof(Dtype) * top[0]->count());
-  // Compute inner1d(top_diff, top_data) and subtract them from the bottom diff
-  /*for (int i = 0; i < num; ++i) {
-    scale_data[i] = caffe_cpu_dot<Dtype>(dim, top_diff + i * dim,
-        top_data + i * dim);
-  }
-  // subtraction
-  caffe_cpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, num, dim, 1, -1.,
-      scale_data, sum_multiplier_.cpu_data(), 1., bottom_diff);*/
   // elementwise multiplication
   caffe_mul<Dtype>(top[0]->count(), bottom_diff, top_data, bottom_diff);
+  LOG(ERR) << "Aparently unused QLearningLayer Backward_cpu (not implemented)";
   return Dtype(0);
 }
 

@@ -724,11 +724,27 @@ class QDataLayer : public Layer<Dtype> {
   Blob<Dtype> data_mean_;
   vector<std::pair<std::string, vector<int> > > image_database_;
   enum QField { IMAGE_INDEX, ACTION, REWARD, DISCOUNTEDMAXQ, X1, Y1, X2, Y2, NUM };
-  vector<vector<float> > fg_windows_;
-  vector<vector<float> > bg_windows_;
+  vector<vector<float> > windows_;
 };
 
+template <typename Dtype>
+class ActionAccuracyLayer : public Layer<Dtype> {
+ public:
+  explicit ActionAccuracyLayer(const LayerParameter& param)
+      : Layer<Dtype>(param) {}
+  virtual void SetUp(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
 
+ protected:
+  virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+  // The ActionAccuracy layer should not be used to compute backward operations.
+  virtual Dtype Backward_cpu(const vector<Blob<Dtype>*>& top,
+      const bool propagate_down, vector<Blob<Dtype>*>* bottom) {
+    NOT_IMPLEMENTED;
+    return Dtype(0.);
+  }
+};
 
 }  // namespace caffe
 

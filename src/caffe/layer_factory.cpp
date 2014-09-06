@@ -74,6 +74,10 @@ Layer<Dtype>* GetLayer(const LayerParameter& param) {
     return new QLearningLayer<Dtype>(param);
   } else if (type == "Q_loss") {
     return new QLearningWithLossLayer<Dtype>(param);
+  } else if (type == "Q_data") {
+    return new QDataLayer<Dtype>(param);
+  } else if (type == "action_accuracy") {
+    return new ActionAccuracyLayer<Dtype>(param);
   } else {
     LOG(FATAL) << "Unknown layer name: " << type;
   }

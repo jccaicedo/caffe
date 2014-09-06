@@ -30,6 +30,7 @@ void QLearningWithLossLayer<Dtype>::Forward_cpu(
   // The forward pass computes the softmax prob values.
   softmax_bottom_vec_[0] = bottom[0];
   softmax_layer_->Forward(softmax_bottom_vec_, &softmax_top_vec_);
+  LOG(INFO) << "QLearningWithLoss Forward CPU";
 }
 
 template <typename Dtype>
@@ -44,23 +45,33 @@ Dtype QLearningWithLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& to
   int num = prob_.num();
   int dim = prob_.count() / num;
   Dtype loss = 0;
+  Dtype avg[10] = {};
+  Dtype dif[10] = {};
   for (int i = 0; i < num; ++i) {
     int action = static_cast<int>(label[i*3 + 0]);
     Dtype reward = label[i*3 + 1];
     Dtype discountedMaxQ = label[i*3 + 2];
     for (int j = 0; j < dim; ++j) {
+      avg[j] += prob_data[i*dim+j];
       if (action == j) {
-        Dtype y = (reward + discountedMaxQ);
+        Dtype y = (reward);// + discountedMaxQ);
         bottom_diff[i * dim + action] -= y;
+        dif[j] += bottom_diff[i*dim + action];
         loss += (y - prob_data[i * dim + action])*(y - prob_data[i * dim + action]);
+        //LOG(INFO) << i << " " << action << " " << reward << " " << discountedMaxQ << " " <loss;
       } else {
         // Only update connections associated to the action
         bottom_diff[i * dim + action] = 0.0;
       }
     }
   }
+  for (int j = 0; j < dim; ++j) {avg[j] /= num; dif[j] /= num; }
+  LOG(INFO) << "Prob Data: " << avg[0] << " " << avg[1] << " " << avg[2] << " " << avg[3] << " " << avg[4] << " " << avg[5] << " " << avg[6] << " " << avg[7] << " " << avg[8] << " " << avg[9];
+  LOG(INFO) << "Diff Data: " << dif[0] << " " << dif[1] << " " << dif[2] << " " << dif[3] << " " << dif[4] << " " << dif[5] << " " << dif[6] << " " << dif[7] << " " << dif[8] << " " << dif[9];
+
   // Scale down gradient
   caffe_scal(prob_.count(), Dtype(1) / num, bottom_diff);
+  LOG(INFO) << " Loss " << loss/num;
   return loss / num;
 }
 

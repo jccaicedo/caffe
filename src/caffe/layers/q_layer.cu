@@ -16,19 +16,7 @@ using std::max;
 namespace caffe {
 
 template <typename Dtype>
-__global__ void kernel_get_max(const int num, const int dim,
-    const Dtype* data, Dtype* out) {
-  CUDA_KERNEL_LOOP(index, num) {
-    Dtype maxval = -FLT_MAX;
-    for (int i = 0; i < dim; ++i) {
-      maxval = max(data[index * dim + i], maxval);
-    }
-    out[index] = maxval;
-  }
-}
-
-template <typename Dtype>
-__global__ void kernel_softmax_div(const int num, const int dim,
+__global__ void kernel_max_div(const int num, const int dim,
     const Dtype* scale, Dtype* data) {
   CUDA_KERNEL_LOOP(index, num * dim) {
     int n = index / dim;
@@ -37,9 +25,14 @@ __global__ void kernel_softmax_div(const int num, const int dim,
 }
 
 template <typename Dtype>
-__global__ void kernel_exp(const int num, const Dtype* data, Dtype* out) {
+__global__ void kernel_get_absmax(const int num, const int dim, 
+    const Dtype* data, Dtype* out) {
   CUDA_KERNEL_LOOP(index, num) {
-    out[index] = exp(data[index]);
+    Dtype absMax = -FLT_MAX;
+    for (int i = 0; i < dim; ++i) {
+      absMax = max( abs(data[index * dim + i]), absMax);// * data[index * dim + i];
+    }
+    out[index] = absMax;
   }
 }
 
@@ -53,27 +46,14 @@ void QLearningLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
   int dim = bottom[0]->count() / bottom[0]->num();
   CUDA_CHECK(cudaMemcpy(top_data, bottom_data,
       sizeof(Dtype) * bottom[0]->count(), cudaMemcpyDeviceToDevice));
-  // we need to subtract the max to avoid numerical issues, compute the exp,
-  // and then normalize.
-  // Compute max
-  // NOLINT_NEXT_LINE(whitespace/operators)
-  /*kernel_get_max<Dtype><<<CAFFE_GET_BLOCKS(num), CAFFE_CUDA_NUM_THREADS>>>(
-      num, dim, bottom_data, scale_data);
-  // subtraction
-  caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, num, dim, 1, -1.,
-      scale_data, sum_multiplier_.gpu_data(), 1., top_data);
-  // Perform exponentiation
-  // NOLINT_NEXT_LINE(whitespace/operators)
-  kernel_exp<Dtype><<<CAFFE_GET_BLOCKS(num * dim), CAFFE_CUDA_NUM_THREADS>>>(
-      num * dim, top_data, top_data);
-  // sum after exp
-  caffe_gpu_gemv<Dtype>(CblasNoTrans, num, dim, 1., top_data,
-      sum_multiplier_.gpu_data(), 0., scale_data);
+  // We need to normalize output vector to avoid numerical issues
+  // Compute dot products
+  kernel_get_absmax<Dtype><<<CAFFE_GET_BLOCKS(num), CAFFE_CUDA_NUM_THREADS>>>(
+    num, dim, bottom_data, scale_data);
   // Do division
-  // NOLINT_NEXT_LINE(whitespace/operators)
-  kernel_softmax_div<Dtype><<<CAFFE_GET_BLOCKS(num * dim),
+  kernel_max_div<Dtype><<<CAFFE_GET_BLOCKS(num * dim),
                               CAFFE_CUDA_NUM_THREADS>>>(
-      num, dim, scale_data, top_data);*/
+      num, dim, scale_data, top_data);
 }
 
 // TODO(Yangqing): implement the GPU version of softmax.
@@ -103,6 +83,8 @@ Dtype QLearningLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
   caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasNoTrans, num, dim, 1, -1.,
       scale_.gpu_data(), sum_multiplier_.gpu_data(), 1., bottom_diff);*/
   // elementwise multiplication
+
+  LOG(ERR) >> "Backward GPU not implemented for QLearningLayer";
   caffe_gpu_mul<Dtype>(top[0]->count(), bottom_diff, top_data, bottom_diff);
   return Dtype(0);
 }
