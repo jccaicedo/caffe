@@ -10,8 +10,10 @@
 //#include "caffe/vision_layers.hpp"
 #include "caffe/q_layer.hpp"
 #include "caffe/util/math_functions.hpp"
+#include <cmath>
 
 using std::max;
+using std::abs;
 
 namespace caffe {
 
@@ -84,7 +86,7 @@ Dtype QLearningLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       scale_.gpu_data(), sum_multiplier_.gpu_data(), 1., bottom_diff);*/
   // elementwise multiplication
 
-  LOG(ERR) >> "Backward GPU not implemented for QLearningLayer";
+  LOG(INFO) << "Backward GPU not implemented for QLearningLayer";
   caffe_gpu_mul<Dtype>(top[0]->count(), bottom_diff, top_data, bottom_diff);
   return Dtype(0);
 }

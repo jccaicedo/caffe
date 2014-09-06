@@ -7,8 +7,10 @@
 //#include "caffe/vision_layers.hpp"
 #include "caffe/q_layer.hpp"
 #include "caffe/util/math_functions.hpp"
+#include <cmath>
 
 using std::max;
+using std::abs;
 
 namespace caffe {
 
@@ -63,7 +65,7 @@ Dtype QLearningLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   memcpy(bottom_diff, top_diff, sizeof(Dtype) * top[0]->count());
   // elementwise multiplication
   caffe_mul<Dtype>(top[0]->count(), bottom_diff, top_data, bottom_diff);
-  LOG(ERR) << "Aparently unused QLearningLayer Backward_cpu (not implemented)";
+  LOG(INFO) << "Aparently unused QLearningLayer Backward_cpu (not implemented)";
   return Dtype(0);
 }
 
