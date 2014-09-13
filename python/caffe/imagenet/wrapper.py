@@ -91,7 +91,7 @@ class ImageNetClassifier(object):
     input_blob = [prepare_image(filename, self._IMAGENET_MEAN, self._center_only, self._IMAGE_DIM, self._CROPPED_DIM)]
     self.caffenet.Forward(input_blob, self._output_blobs)
     return self._output_blobs[0].mean(0).flatten()
-    
+
 def main(argv):
   """
   The main function will carry out classification.

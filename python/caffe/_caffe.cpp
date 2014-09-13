@@ -147,7 +147,7 @@ struct CaffeNet {
     net_->CopyTrainedLayersFrom(pretrained_param_file);
   }
 
-  virtual ~CaffeNet() {}
+  virtual ~CaffeNet() { }
 
   inline void check_array_against_blob(
       PyArrayObject* arr, Blob<float>* blob) {
