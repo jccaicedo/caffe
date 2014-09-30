@@ -57,11 +57,11 @@ Dtype QLearningWithLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& to
         Dtype y = (reward + discountedMaxQ);
         bottom_diff[i * dim + action] -= y;
         //dif[j] += bottom_diff[i*dim + action];
-        loss += (y - prob_data[i * dim + action])*(y - prob_data[i * dim + action]);
-        //LOG(INFO) << i << " " << action << " " << reward << " " << discountedMaxQ << " " <loss;
+        loss += 0.5*(y - prob_data[i * dim + action])*(y - prob_data[i * dim + action]);
+        //LOG(INFO) << i << " " << action << " " << reward << " " << discountedMaxQ << " " << loss;
       } else {
         // Only update connections associated to the action
-        bottom_diff[i * dim + action] = 0.0;
+        bottom_diff[i * dim + j] = 0.0;
       }
     }
   }

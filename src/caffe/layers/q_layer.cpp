@@ -40,7 +40,7 @@ void QLearningLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   int dim = bottom[0]->count() / bottom[0]->num();
   memcpy(top_data, bottom_data, sizeof(Dtype) * bottom[0]->count());
   // we need to divide by the absmax to avoid numerical issues
-  for (int i = 0; i < num; ++i) {
+  /*for (int i = 0; i < num; ++i) {
     scale_data[i] = abs(bottom_data[i*dim]);
     for (int j = 0; j < dim; ++j) {
       scale_data[i] = max(scale_data[i], abs(bottom_data[i * dim + j]));
@@ -49,7 +49,7 @@ void QLearningLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   // Do division
   for (int i = 0; i < num; ++i) {
     caffe_scal<Dtype>(dim, Dtype(1.) / scale_data[i], top_data + i * dim);
-  }
+  }*/
 }
 
 template <typename Dtype>
