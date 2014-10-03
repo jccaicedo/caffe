@@ -18,18 +18,18 @@ void QLearningWithLossLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
       vector<Blob<Dtype>*>* top) {
   CHECK_EQ(bottom.size(), 2) << "QLearningLoss Layer takes two blobs as input.";
   CHECK_EQ(top->size(), 0) << "QLearningLoss Layer takes no blob as output.";
-  softmax_bottom_vec_.clear();
-  softmax_bottom_vec_.push_back(bottom[0]);
-  softmax_top_vec_.push_back(&prob_);
-  softmax_layer_->SetUp(softmax_bottom_vec_, &softmax_top_vec_);
+  qlearning_bottom_vec_.clear();
+  qlearning_bottom_vec_.push_back(bottom[0]);
+  qlearning_top_vec_.push_back(&prob_);
+  qlearning_layer_->SetUp(qlearning_bottom_vec_, &qlearning_top_vec_);
 }
 
 template <typename Dtype>
 void QLearningWithLossLayer<Dtype>::Forward_cpu(
     const vector<Blob<Dtype>*>& bottom, vector<Blob<Dtype>*>* top) {
-  // The forward pass computes the softmax prob values.
-  softmax_bottom_vec_[0] = bottom[0];
-  softmax_layer_->Forward(softmax_bottom_vec_, &softmax_top_vec_);
+  // The forward pass computes the qlearning prob values.
+  qlearning_bottom_vec_[0] = bottom[0];
+  qlearning_layer_->Forward(qlearning_bottom_vec_, &qlearning_top_vec_);
   LOG(INFO) << "QLearningWithLoss Forward CPU";
 }
 
@@ -50,6 +50,8 @@ Dtype QLearningWithLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& to
   for (int i = 0; i < num; ++i) {
     int action = static_cast<int>(label[i*3 + 0]);
     Dtype reward = label[i*3 + 1];
+    //if (reward > 0) reward *= 2;
+    //else reward *= 3;
     Dtype discountedMaxQ = label[i*3 + 2];
     for (int j = 0; j < dim; ++j) {
       //avg[j] += prob_data[i*dim+j];
@@ -57,8 +59,8 @@ Dtype QLearningWithLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& to
         Dtype y = (reward + discountedMaxQ);
         bottom_diff[i * dim + action] -= y;
         //dif[j] += bottom_diff[i*dim + action];
-        loss += 0.5*(y - prob_data[i * dim + action])*(y - prob_data[i * dim + action]);
-        //LOG(INFO) << i << " " << action << " " << reward << " " << discountedMaxQ << " " << loss;
+        loss += (y - prob_data[i * dim + action])*(y - prob_data[i * dim + action]);
+        //LOG(INFO) << i << " " << action << " " << reward << " " << discountedMaxQ << " " << prob_data[i * dim + action] << " " << loss;
       } else {
         // Only update connections associated to the action
         bottom_diff[i * dim + j] = 0.0;

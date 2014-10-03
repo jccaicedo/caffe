@@ -42,16 +42,16 @@ class QLearningLayer : public Layer<Dtype> {
 };
 
 
-// QLearningWithLossLayer is a layer that implements softmax and then computes
-// the loss - it is preferred over softmax + multinomiallogisticloss in the
+// QLearningWithLossLayer is a layer that implements QLearning and then computes
+// the loss - it is preferred over QLearning + multinomiallogisticloss in the
 // sense that during training, this will produce more numerically stable
-// gradients. During testing this layer could be replaced by a softmax layer
+// gradients. During testing this layer could be replaced by a QLearning layer
 // to generate probability outputs.
 template <typename Dtype>
 class QLearningWithLossLayer : public Layer<Dtype> {
  public:
   explicit QLearningWithLossLayer(const LayerParameter& param)
-      : Layer<Dtype>(param), softmax_layer_(new QLearningLayer<Dtype>(param)) {}
+      : Layer<Dtype>(param), qlearning_layer_(new QLearningLayer<Dtype>(param)) {}
   virtual void SetUp(const vector<Blob<Dtype>*>& bottom,
       vector<Blob<Dtype>*>* top);
 
@@ -65,12 +65,12 @@ class QLearningWithLossLayer : public Layer<Dtype> {
   virtual Dtype Backward_gpu(const vector<Blob<Dtype>*>& top,
      const bool propagate_down, vector<Blob<Dtype>*>* bottom);
 
-  shared_ptr<QLearningLayer<Dtype> > softmax_layer_;
+  shared_ptr<QLearningLayer<Dtype> > qlearning_layer_;
   // prob stores the output probability of the layer.
   Blob<Dtype> prob_;
-  // Vector holders to call the underlying softmax layer forward and backward.
-  vector<Blob<Dtype>*> softmax_bottom_vec_;
-  vector<Blob<Dtype>*> softmax_top_vec_;
+  // Vector holders to call the underlying qlearning layer forward and backward.
+  vector<Blob<Dtype>*> qlearning_bottom_vec_;
+  vector<Blob<Dtype>*> qlearning_top_vec_;
 };
 
 

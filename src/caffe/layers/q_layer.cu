@@ -50,12 +50,12 @@ void QLearningLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
       sizeof(Dtype) * bottom[0]->count(), cudaMemcpyDeviceToDevice));
   // We need to normalize output vector to avoid numerical issues
   // Compute dot products
-  kernel_get_absmax<Dtype><<<CAFFE_GET_BLOCKS(num), CAFFE_CUDA_NUM_THREADS>>>(
+  /*kernel_get_absmax<Dtype><<<CAFFE_GET_BLOCKS(num), CAFFE_CUDA_NUM_THREADS>>>(
     num, dim, bottom_data, scale_data);
   // Do division
   kernel_max_div<Dtype><<<CAFFE_GET_BLOCKS(num * dim),
                               CAFFE_CUDA_NUM_THREADS>>>(
-      num, dim, scale_data, top_data);
+      num, dim, scale_data, top_data);*/
 }
 
 // TODO(Yangqing): implement the GPU version of softmax.

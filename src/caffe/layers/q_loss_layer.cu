@@ -16,15 +16,15 @@ namespace caffe {
 template <typename Dtype>
 void QLearningWithLossLayer<Dtype>::Forward_gpu(
     const vector<Blob<Dtype>*>& bottom, vector<Blob<Dtype>*>* top) {
-  // The forward pass computes the softmax prob values.
-  softmax_bottom_vec_[0] = bottom[0];
-  softmax_layer_->Forward(softmax_bottom_vec_, &softmax_top_vec_);
+  // The forward pass computes the qlearning prob values.
+  qlearning_bottom_vec_[0] = bottom[0];
+  qlearning_layer_->Forward(qlearning_bottom_vec_, &qlearning_top_vec_);
 }
 
 template <typename Dtype>
 Dtype QLearningWithLossLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     const bool propagate_down, vector<Blob<Dtype>*>* bottom) {
-  // TODO(Yangqing): implement the GPU version of softmax.
+  // TODO(Yangqing): implement the GPU version of qlearning.
   return Backward_cpu(top, propagate_down, bottom);
 }
 
