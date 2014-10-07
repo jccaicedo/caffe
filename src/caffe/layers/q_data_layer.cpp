@@ -40,6 +40,7 @@ void* QDataLayerPrefetch(void* layer_pointer) {
 
   Dtype* top_data = layer->prefetch_data_->mutable_cpu_data();
   Dtype* top_label = layer->prefetch_label_->mutable_cpu_data();
+  Dtype* top_state_features = layer->prefetch_state_features_->mutable_cpu_data();
   const Dtype scale = layer->layer_param_.scale();
   const int batchsize = layer->layer_param_.batchsize();
   const int cropsize = layer->layer_param_.cropsize();
@@ -54,6 +55,9 @@ void* QDataLayerPrefetch(void* layer_pointer) {
   const string& crop_mode = layer->layer_param_.det_crop_mode();
 
   bool use_square = (crop_mode == "square") ? true : false;
+  int stateFeatures = this->layer_param_.num_state_features(); 
+  int numActions + this->layer_param_.num_actions();
+  int totalStateFeatures = stateFeatures + numActions;
 
   // zero out batch
   memset(top_data, 0, sizeof(Dtype)*layer->prefetch_data_->count());
@@ -205,6 +209,18 @@ void* QDataLayerPrefetch(void* layer_pointer) {
       top_label[itemid*3 + 1] = window[QDataLayer<Dtype>::REWARD];
       top_label[itemid*3 + 2] = window[QDataLayer<Dtype>::DISCOUNTEDMAXQ];
 
+      // get state features
+      for (int q = 0; q < stateFeatures; ++q) {
+        top_state_features[itemid*totalStateFeatures + q] = window[QDataLayer<Dtype>::NUM + q];
+      }
+      for (int q = 0; q < numActions; ++q) {
+        if (q == window[QDataLayer<Dtype>::PREV_STATE]) {
+          top_state_features[itemid*totalStateFeatures + stateFeatures + q] = 1.0;
+        } else {
+          top_state_features[itemid*totalStateFeatures + stateFeatures + q] = 0.0;
+        }
+      }
+
       #if 0
       // useful debugging code for dumping transformed windows to disk
       string file_id;
@@ -259,7 +275,7 @@ void QDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
   // to decide which is which.
 
   CHECK_EQ(bottom.size(), 0) << "Q data Layer takes no input blobs.";
-  CHECK_EQ(top->size(), 2) << "Q data Layer prodcues two blobs as output.";
+  CHECK_EQ(top->size(), 3) << "Q data Layer prodcues three blobs as output.";
 
   // window_file format
   // repeated:
@@ -269,15 +285,13 @@ void QDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
   //    height
   //    width
   //    num_windows
-  //    class_index overlap x1 y1 x2 y2
+  //    class_index action reward maxNextQ x1 y1 x2 y2 stateFeatures ... prevAction
 
   LOG(INFO) << "Q data layer:" << std::endl
-      << "  foreground (object) overlap threshold: "
-      << this->layer_param_.det_fg_threshold() << std::endl
-      << "  background (non-object) overlap threshold: "
-      << this->layer_param_.det_bg_threshold() << std::endl
-      << "  foreground sampling fraction: "
-      << this->layer_param_.det_fg_fraction();
+      << "  Number of actions: "
+      << this->layer_param_.num_actions() << std::endl
+      << "  Number of state features: "
+      << this->layer_param_.num_state_features();
 
   std::ifstream infile(this->layer_param_.source().c_str());
   CHECK(infile.good()) << "Failed to open window file "
@@ -303,11 +317,16 @@ void QDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
     int num_windows;
     infile >> num_windows;
     for (int i = 0; i < num_windows; ++i) {
-      int action, x1, y1, x2, y2;
-      float reward, discountedMaxQ;
+      vector<float> window(QDataLayer::NUM + this->layer_param_.num_state_features());
+      int action, x1, y1, x2, y2, prevAction;
+      float reward, discountedMaxQ, feature;
       infile >> action >> reward >> discountedMaxQ >> x1 >> y1 >> x2 >> y2;
+      for (int j = 0; j < this->layer_param_.num_state_features(); ++j) {
+        infile >> feature;
+        window[QDataLayer::NUM + j] = feature;
+      }
+      infile >> prevAction;
 
-      vector<float> window(QDataLayer::NUM);
       window[QDataLayer::IMAGE_INDEX] = image_index;
       window[QDataLayer::ACTION] = action;
       window[QDataLayer::REWARD] = reward;
@@ -316,6 +335,7 @@ void QDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
       window[QDataLayer::Y1] = y1;
       window[QDataLayer::X2] = x2;
       window[QDataLayer::Y2] = y2;
+      window[QDataLayer::PREV_ACTION] = prevAction;
 
       // add window to list
       int label = window[QDataLayer::ACTION];
@@ -363,6 +383,12 @@ void QDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
   (*top)[1]->Reshape(this->layer_param_.batchsize(), 3, 1, 1);
   prefetch_label_.reset(
       new Blob<Dtype>(this->layer_param_.batchsize(), 3, 1, 1));
+  // State features
+  int totalFeatures = this->layer_param_.num_state_features() + this->layer_param_.num_actions();
+  (*top)[2]->Reshape(this->layer_param_.batchsize(), totalFeatures, 1, 1);
+  prefetch_state_features_.reset(
+      new Blob<Dtype>(this->layer_param_.batchsize(), totalFeatures, 1, 1)
+  );
 
   // check if we want to have mean
   if (this->layer_param_.has_meanfile()) {
@@ -400,6 +426,9 @@ void QDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       sizeof(Dtype) * prefetch_data_->count());
   memcpy((*top)[1]->mutable_cpu_data(), prefetch_label_->cpu_data(),
       sizeof(Dtype) * prefetch_label_->count());
+  memcpy((*top)[2]->mutable_cpu_data(), prefetch_state_features_->cpu_data(),
+      sizeof(Dtype) * prefetch_state_features_->count());
+
   // Start a new prefetch thread
   CHECK(!pthread_create(&thread_, NULL, QDataLayerPrefetch<Dtype>,
       reinterpret_cast<void*>(this))) << "Pthread execution failed.";
@@ -417,6 +446,10 @@ void QDataLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
   CUDA_CHECK(cudaMemcpy((*top)[1]->mutable_gpu_data(),
       prefetch_label_->cpu_data(), sizeof(Dtype) * prefetch_label_->count(),
       cudaMemcpyHostToDevice));
+  CUDA_CHECK(cudaMemcpy((*top)[2]->mutable_gpu_data(),
+      prefetch_label_->cpu_data(), sizeof(Dtype) * prefetch_state_features_->count(),
+      cudaMemcpyHostToDevice));
+
   // Start a new prefetch thread
   CHECK(!pthread_create(&thread_, NULL, QDataLayerPrefetch<Dtype>,
       reinterpret_cast<void*>(this))) << "Pthread execution failed.";

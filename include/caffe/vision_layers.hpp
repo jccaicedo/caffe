@@ -721,9 +721,10 @@ class QDataLayer : public Layer<Dtype> {
   pthread_t thread_;
   shared_ptr<Blob<Dtype> > prefetch_data_;
   shared_ptr<Blob<Dtype> > prefetch_label_;
+  shared_ptr<Blob<Dtype> > prefetch_state_features_;
   Blob<Dtype> data_mean_;
   vector<std::pair<std::string, vector<int> > > image_database_;
-  enum QField { IMAGE_INDEX, ACTION, REWARD, DISCOUNTEDMAXQ, X1, Y1, X2, Y2, NUM };
+  enum QField { IMAGE_INDEX, ACTION, REWARD, DISCOUNTEDMAXQ, X1, Y1, X2, Y2, PREV_ACTION, NUM };
   vector<vector<float> > windows_;
 };
 

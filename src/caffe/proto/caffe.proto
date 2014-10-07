@@ -130,6 +130,14 @@ message LayerParameter {
   // (used only by the noleveldb_data_layer)
   optional uint32 img_channels = 66 [default = 3];
 
+  // Number of state features for Q Learning
+  // (used only by the q_data_layer)
+  optional uint32 num_state_features = 67 [default = 0];
+
+  // Number of actions for Q Learning
+  // (used only by the q_data_layer)
+  optional uint32 num_actions = 68 [default = 2];
+
 }
 
 message LayerConnection {

@@ -156,7 +156,7 @@ void AccuracyLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
         max_id = j;
       }
     }
-    if (max_id == static_cast<int>(bottom_label[i])) {
+    if (max_id == static_cast<int>(bottom_label[i])) { 
       ++accuracy;
     }
     Dtype prob = max(bottom_data[i * dim + static_cast<int>(bottom_label[i])],
