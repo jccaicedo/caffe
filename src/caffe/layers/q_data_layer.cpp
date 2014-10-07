@@ -55,8 +55,8 @@ void* QDataLayerPrefetch(void* layer_pointer) {
   const string& crop_mode = layer->layer_param_.det_crop_mode();
 
   bool use_square = (crop_mode == "square") ? true : false;
-  int stateFeatures = this->layer_param_.num_state_features(); 
-  int numActions + this->layer_param_.num_actions();
+  const int stateFeatures = layer->layer_param_.num_state_features(); 
+  const int numActions = layer->layer_param_.num_actions();
   int totalStateFeatures = stateFeatures + numActions;
 
   // zero out batch
@@ -214,7 +214,7 @@ void* QDataLayerPrefetch(void* layer_pointer) {
         top_state_features[itemid*totalStateFeatures + q] = window[QDataLayer<Dtype>::NUM + q];
       }
       for (int q = 0; q < numActions; ++q) {
-        if (q == window[QDataLayer<Dtype>::PREV_STATE]) {
+        if (q == window[QDataLayer<Dtype>::PREV_ACTION]) {
           top_state_features[itemid*totalStateFeatures + stateFeatures + q] = 1.0;
         } else {
           top_state_features[itemid*totalStateFeatures + stateFeatures + q] = 0.0;

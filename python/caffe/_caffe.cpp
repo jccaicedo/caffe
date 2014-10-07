@@ -218,6 +218,44 @@ struct CaffeNet {
     CUDA_CHECK(cudaFree(dev_blob));
   }
 
+  void ForwardRegionsAndState(list boxes, int context_pad, list state /*, const string& imageName*/){
+    int totalBoxes = len(boxes);
+    vector<Blob<float>*>& input_blobs = net_->input_blobs();
+    // Prepare boxes coordinates
+    int ** data;
+    data = new int*[totalBoxes];
+    for(int j = 0; j < totalBoxes; ++j) {
+      data[j] = new int[4];
+      list box(boxes[j]);
+      for(int k = 0; k < len(box); ++k) {
+        data[j][k] = boost::python::extract<int>(box[k]);
+      }
+    }
+    // Crop and Resize boxes in the GPU
+    float* dev_blob = CropAndResizeBoxes_GpuMat<float>(dev_src_image_, data, totalBoxes, context_pad, cropsize_, dev_mean_image_);
+    //float* dev_blob = CropAndResizeBoxes_Debug<float>(imageName, data, totalBoxes, context_pad, cropsize_, dev_mean_image_);
+
+    // Copy data to the network
+    // Copy Image Data (blobs[0])
+      cudaMemcpy(input_blobs[0]->mutable_gpu_data(), dev_blob,
+          sizeof(float) * input_blobs[0]->count(), cudaMemcpyDeviceToDevice);
+    // Copy State Representation (blobs[1])
+    object elem = state[0];
+    PyArrayObject* arr = reinterpret_cast<PyArrayObject*>(elem.ptr());
+    check_array_against_blob(arr, input_blobs[1]);
+    cudaMemcpy(input_blobs[1]->mutable_gpu_data(), PyArray_DATA(arr),
+        sizeof(float) * input_blobs[1]->count(), cudaMemcpyHostToDevice);
+
+    // Forward the network
+    const vector<Blob<float>*>& output_blobs = net_->ForwardPrefilled();
+
+    // Free temporary memory
+    for(int j = 0; j < totalBoxes; ++j) delete data[j];
+    delete data;
+    CUDA_CHECK(cudaFree(dev_blob));
+  }
+
+
   // The actual forward function. It takes in a python list of numpy arrays as
   // input and a python list of numpy arrays as output. The input and output
   // should all have correct shapes, are single-precisionabcdnt- and
@@ -354,6 +392,7 @@ BOOST_PYTHON_MODULE(_caffe) {
       "CaffeNet", boost::python::init<string, string>())
       .def("Forward",          &CaffeNet::Forward)
       .def("ForwardRegions",  &CaffeNet::ForwardRegions)
+      .def("ForwardRegionsAndState",  &CaffeNet::ForwardRegionsAndState)
       .def("InitializeImage", &CaffeNet::InitializeImage)
       .def("ReleaseImageData",&CaffeNet::ReleaseImageData)
       .def("ForwardPrefilled", &CaffeNet::ForwardPrefilled)
