@@ -26,6 +26,22 @@ void ConcatLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
       const Dtype* bottom_data = bottom[i]->gpu_data();
       int num_elem =
         bottom[i]->channels()*bottom[i]->height()*bottom[i]->width();
+      /*if (i==1) {
+        #include <sstream>
+        LOG(INFO) << " CONCAT ELEMENTS: num_elem=" << num_elem << " NUM_= " << NUM_;
+          Blob<Dtype> aux(128,20,1,1);
+          Dtype* aux_data = aux.mutable_cpu_data();
+          CUDA_CHECK(cudaMemcpy(aux_data, bottom_data, bottom[i]->count()*sizeof(Dtype), cudaMemcpyDeviceToHost));
+
+        for (int q = 0; q < 3; ++q) {
+          std::ostringstream s; 
+          //return ((n * channels_ + c) * height_ + h) * width_ + w;
+          for (int r = 0; r < num_elem; r++) {
+            s << " " << aux_data[q*num_elem + r];
+          }
+          LOG(INFO) << q << s.str() << " eov" << q;
+        }
+      }*/
       for (int n = 0; n < NUM_; ++n) {
         caffe_gpu_copy(num_elem, bottom_data+bottom[i]->offset(n),
           top_data+(*top)[0]->offset(n, offset_channel));

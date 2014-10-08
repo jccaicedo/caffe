@@ -221,6 +221,13 @@ void* QDataLayerPrefetch(void* layer_pointer) {
         }
       }
 
+      /*#include <sstream>
+      std::ostringstream s; 
+      for (int q = 0; q < totalStateFeatures; ++q) {
+        s << " " << top_state_features[itemid*totalStateFeatures + q];
+      }
+      LOG(INFO) << s.str();*/
+
       #if 0
       // useful debugging code for dumping transformed windows to disk
       string file_id;
@@ -409,6 +416,7 @@ void QDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
   // GPUs this seems to cause failures if we do not so.
   prefetch_data_->mutable_cpu_data();
   prefetch_label_->mutable_cpu_data();
+  prefetch_state_features_->mutable_cpu_data();
   data_mean_.cpu_data();
   DLOG(INFO) << "Initializing prefetch";
   CHECK(!pthread_create(&thread_, NULL, QDataLayerPrefetch<Dtype>,
@@ -447,7 +455,7 @@ void QDataLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
       prefetch_label_->cpu_data(), sizeof(Dtype) * prefetch_label_->count(),
       cudaMemcpyHostToDevice));
   CUDA_CHECK(cudaMemcpy((*top)[2]->mutable_gpu_data(),
-      prefetch_label_->cpu_data(), sizeof(Dtype) * prefetch_state_features_->count(),
+      prefetch_state_features_->cpu_data(), sizeof(Dtype) * prefetch_state_features_->count(),
       cudaMemcpyHostToDevice));
 
   // Start a new prefetch thread
