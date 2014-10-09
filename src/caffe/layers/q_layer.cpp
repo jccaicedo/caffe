@@ -39,6 +39,16 @@ void QLearningLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   int num = bottom[0]->num();
   int dim = bottom[0]->count() / bottom[0]->num();
   memcpy(top_data, bottom_data, sizeof(Dtype) * bottom[0]->count());
+
+  /*#include <sstream> 
+  for (int i = 0; i < num; ++i) {
+    std::ostringstream s;
+    for (int j = 0; j < dim; ++j) {
+      s << bottom_data[i * dim + j] << " ";
+    }
+    LOG(INFO) << s.str();
+  }*/
+
   // we need to divide by the absmax to avoid numerical issues
   /*for (int i = 0; i < num; ++i) {
     scale_data[i] = abs(bottom_data[i*dim]);
@@ -64,7 +74,7 @@ Dtype QLearningLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   int dim = top[0]->count() / top[0]->num();
   memcpy(bottom_diff, top_diff, sizeof(Dtype) * top[0]->count());
   // elementwise multiplication
-  caffe_mul<Dtype>(top[0]->count(), bottom_diff, top_data, bottom_diff);
+  //caffe_mul<Dtype>(top[0]->count(), bottom_diff, top_data, bottom_diff);
   LOG(INFO) << "Aparently unused QLearningLayer Backward_cpu (not implemented)";
   return Dtype(0);
 }

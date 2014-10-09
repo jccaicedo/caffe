@@ -87,7 +87,7 @@ Dtype QLearningLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
   // elementwise multiplication
 
   LOG(INFO) << "Backward GPU not implemented for QLearningLayer";
-  caffe_gpu_mul<Dtype>(top[0]->count(), bottom_diff, top_data, bottom_diff);
+  //caffe_gpu_mul<Dtype>(top[0]->count(), bottom_diff, top_data, bottom_diff);
   return Dtype(0);
 }
 
