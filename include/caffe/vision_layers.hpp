@@ -728,6 +728,41 @@ class QDataLayer : public Layer<Dtype> {
   vector<vector<float> > windows_;
 };
 
+// This function is used to create a pthread that prefetches the window data.
+template <typename Dtype>
+void* PlainDataLayerPrefetch(void* layer_pointer);
+
+template <typename Dtype>
+class PlainDataLayer : public Layer<Dtype> {
+  // The function used to perform prefetching.
+  friend void* PlainDataLayerPrefetch<Dtype>(void* layer_pointer);
+
+ public:
+  explicit PlainDataLayer(const LayerParameter& param)
+      : Layer<Dtype>(param) {}
+  virtual ~PlainDataLayer();
+  virtual void SetUp(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+
+ protected:
+  virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+  virtual void Forward_gpu(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top);
+  virtual Dtype Backward_cpu(const vector<Blob<Dtype>*>& top,
+      const bool propagate_down, vector<Blob<Dtype>*>* bottom);
+  virtual Dtype Backward_gpu(const vector<Blob<Dtype>*>& top,
+      const bool propagate_down, vector<Blob<Dtype>*>* bottom);
+
+  pthread_t thread_;
+  shared_ptr<Blob<Dtype> > prefetch_data_;
+  shared_ptr<Blob<Dtype> > prefetch_label_;
+  Blob<Dtype> data_mean_;
+  enum QField { ACTION, REWARD, DISCOUNTEDMAXQ, NUM };
+  vector<vector<float> > samples_;
+};
+
+
 template <typename Dtype>
 class ActionAccuracyLayer : public Layer<Dtype> {
  public:

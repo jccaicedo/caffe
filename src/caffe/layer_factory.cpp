@@ -76,6 +76,8 @@ Layer<Dtype>* GetLayer(const LayerParameter& param) {
     return new QLearningWithLossLayer<Dtype>(param);
   } else if (type == "Q_data") {
     return new QDataLayer<Dtype>(param);
+  } else if (type == "plain_data") {
+    return new PlainDataLayer<Dtype>(param);
   } else if (type == "action_accuracy") {
     return new ActionAccuracyLayer<Dtype>(param);
   } else {
