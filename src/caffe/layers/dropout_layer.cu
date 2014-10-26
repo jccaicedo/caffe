@@ -1,5 +1,3 @@
-// Copyright 2013 Yangqing Jia
-
 #include <algorithm>
 #include <limits>
 #include <vector>
@@ -7,9 +5,8 @@
 #include "caffe/common.hpp"
 #include "caffe/layer.hpp"
 #include "caffe/syncedmem.hpp"
+#include "caffe/util/math_functions.hpp"
 #include "caffe/vision_layers.hpp"
-
-using std::max;
 
 namespace caffe {
 
@@ -30,17 +27,16 @@ void DropoutLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
   Dtype* top_data = (*top)[0]->mutable_gpu_data();
   const int count = bottom[0]->count();
   if (Caffe::phase() == Caffe::TRAIN) {
-    CURAND_CHECK(curandGenerate(Caffe::curand_generator(),
-        (unsigned int*)(rand_vec_->mutable_gpu_data()), count));
+    unsigned int* mask =
+        static_cast<unsigned int*>(rand_vec_.mutable_gpu_data());
+    caffe_gpu_rng_uniform(count, mask);
     // set thresholds
     // NOLINT_NEXT_LINE(whitespace/operators)
     DropoutForward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
-        count, bottom_data, (unsigned int*)rand_vec_->gpu_data(), uint_thres_,
-        scale_, top_data);
+        count, bottom_data, mask, uint_thres_, scale_, top_data);
     CUDA_POST_KERNEL_CHECK;
   } else {
-    CUDA_CHECK(cudaMemcpy(top_data, bottom_data,
-        count * sizeof(Dtype), cudaMemcpyDeviceToDevice));
+    caffe_copy(count, bottom_data, top_data);
   }
 }
 
@@ -54,21 +50,25 @@ __global__ void DropoutBackward(const int n, const Dtype* in_diff,
 }
 
 template <typename Dtype>
-Dtype DropoutLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
-    const bool propagate_down,
+void DropoutLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
+    const vector<bool>& propagate_down,
     vector<Blob<Dtype>*>* bottom) {
-  CHECK(Caffe::phase() == Caffe::TRAIN);
-  if (propagate_down) {
+  if (propagate_down[0]) {
     const Dtype* top_diff = top[0]->gpu_diff();
     Dtype* bottom_diff = (*bottom)[0]->mutable_gpu_diff();
-    const unsigned int* mask = (unsigned int*)rand_vec_->gpu_data();
-    const int count = (*bottom)[0]->count();
-    // NOLINT_NEXT_LINE(whitespace/operators)
-    DropoutBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
-        count, top_diff, mask, uint_thres_, scale_, bottom_diff);
-    CUDA_POST_KERNEL_CHECK;
+    if (Caffe::phase() == Caffe::TRAIN) {
+      const unsigned int* mask =
+          static_cast<const unsigned int*>(rand_vec_.gpu_data());
+      const int count = (*bottom)[0]->count();
+      // NOLINT_NEXT_LINE(whitespace/operators)
+      DropoutBackward<Dtype><<<CAFFE_GET_BLOCKS(count),
+        CAFFE_CUDA_NUM_THREADS>>>(
+          count, top_diff, mask, uint_thres_, scale_, bottom_diff);
+      CUDA_POST_KERNEL_CHECK;
+    } else {
+      caffe_copy(top[0]->count(), top_diff, bottom_diff);
+    }
   }
-  return Dtype(0);
 }
 
 INSTANTIATE_CLASS(DropoutLayer);

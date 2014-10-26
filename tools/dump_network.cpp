@@ -1,10 +1,8 @@
-// Copyright 2013 Yangqing Jia
-//
 // This program takes in a trained network and an input blob, and then dumps
 // all the intermediate blobs produced by the net to individual binary
 // files stored in protobuffer binary formats.
 // Usage:
-//    dump_network input_net_param trained_net_param \
+//    dump_network input_net_param trained_net_param
 //        input_blob output_prefix 0/1
 // if input_net_param is 'none', we will directly load the network from
 // trained_net_param. If the last argv is 1, we will do a forward-backward pass
@@ -13,17 +11,16 @@
 #include <string>
 #include <vector>
 
-#include "cuda_runtime.h"
 #include "fcntl.h"
 #include "google/protobuf/text_format.h"
 
 #include "caffe/blob.hpp"
 #include "caffe/common.hpp"
-#include "caffe/net.hpp"
 #include "caffe/filler.hpp"
+#include "caffe/net.hpp"
 #include "caffe/proto/caffe.pb.h"
-#include "caffe/util/io.hpp"
 #include "caffe/solver.hpp"
+#include "caffe/util/io.hpp"
 
 using namespace caffe;  // NOLINT(build/namespaces)
 
@@ -31,16 +28,14 @@ int main(int argc, char** argv) {
   Caffe::set_mode(Caffe::GPU);
   Caffe::set_phase(Caffe::TEST);
 
-  NetParameter net_param;
-  NetParameter trained_net_param;
-
+  shared_ptr<Net<float> > caffe_net;
   if (strcmp(argv[1], "none") == 0) {
     // We directly load the net param from trained file
-    ReadProtoFromBinaryFile(argv[2], &net_param);
+    caffe_net.reset(new Net<float>(argv[2]));
   } else {
-    ReadProtoFromTextFile(argv[1], &net_param);
+    caffe_net.reset(new Net<float>(argv[1]));
   }
-  ReadProtoFromBinaryFile(argv[2], &trained_net_param);
+  caffe_net->CopyTrainedLayersFrom(argv[2]);
 
   vector<Blob<float>* > input_vec;
   shared_ptr<Blob<float> > input_blob(new Blob<float>());
@@ -50,9 +45,6 @@ int main(int argc, char** argv) {
     input_blob->FromProto(input_blob_proto);
     input_vec.push_back(input_blob.get());
   }
-
-  shared_ptr<Net<float> > caffe_net(new Net<float>(net_param));
-  caffe_net->CopyTrainedLayersFrom(trained_net_param);
 
   string output_prefix(argv[4]);
   // Run the network without training.

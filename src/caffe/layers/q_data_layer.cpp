@@ -16,9 +16,12 @@
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
 
+#include "caffe/common.hpp"
+#include "caffe/data_layers.hpp"
 #include "caffe/layer.hpp"
 #include "caffe/util/io.hpp"
-#include "caffe/vision_layers.hpp"
+#include "caffe/util/math_functions.hpp"
+#include "caffe/util/rng.hpp"
 
 using std::string;
 using std::map;
@@ -26,50 +29,179 @@ using std::pair;
 
 // caffe.proto > LayerParameter
 //   'source' field specifies the window_file
-//   'cropsize' indicates the desired warped size
+//   'crop_size' indicates the desired warped size
 
 namespace caffe {
 
 template <typename Dtype>
-void* QDataLayerPrefetch(void* layer_pointer) {
-  QDataLayer<Dtype>* layer =
-      reinterpret_cast<QDataLayer<Dtype>*>(layer_pointer);
+QDataLayer<Dtype>::~QDataLayer<Dtype>() {
+  this->JoinPrefetchThread();
+}
 
+template <typename Dtype>
+void QDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
+      vector<Blob<Dtype>*>* top) {
+  // SetUp runs through the window_file and creates two structures
+  // that hold windows: one for foreground (object) windows and one
+  // for background (non-object) windows. We use an overlap threshold
+  // to decide which is which.
+
+  CHECK_EQ(bottom.size(), 0) << "Q data Layer takes no input blobs.";
+  CHECK_EQ(top->size(), 3) << "Q data Layer prodcues three blobs as output.";
+
+  // window_file format
+  // repeated:
+  //    # image_index
+  //    img_path (abs path)
+  //    channels
+  //    height
+  //    width
+  //    num_windows
+  //    class_index action reward maxNextQ x1 y1 x2 y2 stateFeatures ... prevAction
+
+  LOG(INFO) << "Q data layer:" << std::endl
+      << "  Number of actions: "
+      << this->layer_param_.qdata_param().num_actions() << std::endl
+      << "  Number of state features: "
+      << this->layer_param_.qdata_param().num_state_features();
+
+  std::ifstream infile(this->layer_param_.qdata_param().source().c_str());
+  CHECK(infile.good()) << "Failed to open window file "
+      << this->layer_param_.qdata_param().source() << std::endl;
+
+  map<int, int> label_hist;
+  label_hist.insert(std::make_pair(0, 0));
+
+  string hashtag;
+  int image_index, channels;
+  while (infile >> hashtag >> image_index) {
+    CHECK_EQ(hashtag, "#");
+    // read image path
+    string image_path;
+    infile >> image_path;
+    // read image dimensions
+    vector<int> image_size(3);
+    infile >> image_size[0] >> image_size[1] >> image_size[2];
+    channels = image_size[0];
+    image_database_.push_back(std::make_pair(image_path, image_size));
+
+    // read each box
+    int num_windows;
+    infile >> num_windows;
+    for (int i = 0; i < num_windows; ++i) {
+      vector<float> window(QDataLayer::NUM + this->layer_param_.qdata_param().num_state_features());
+      int action, x1, y1, x2, y2, prevAction;
+      float reward, discountedMaxQ, feature;
+      infile >> action >> reward >> discountedMaxQ >> x1 >> y1 >> x2 >> y2;
+      for (int j = 0; j < this->layer_param_.qdata_param().num_state_features(); ++j) {
+        infile >> feature;
+        window[QDataLayer::NUM + j] = feature;
+      }
+      infile >> prevAction;
+
+      window[QDataLayer::IMAGE_INDEX] = image_index;
+      window[QDataLayer::ACTION] = action;
+      window[QDataLayer::REWARD] = reward;
+      window[QDataLayer::DISCOUNTEDMAXQ] = discountedMaxQ;
+      window[QDataLayer::X1] = x1;
+      window[QDataLayer::Y1] = y1;
+      window[QDataLayer::X2] = x2;
+      window[QDataLayer::Y2] = y2;
+      window[QDataLayer::PREV_ACTION] = prevAction;
+
+      // add window to list
+      int label = window[QDataLayer::ACTION];
+      CHECK_GT(label, -1);
+      windows_.push_back(window);
+      label_hist.insert(std::make_pair(label, 0));
+      label_hist[label]++;
+    }
+
+    if (image_index % 100 == 0) {
+      LOG(INFO) << "num: " << image_index << " "
+          << image_path << " "
+          << image_size[0] << " "
+          << image_size[1] << " "
+          << image_size[2] << " "
+          << "windows to process: " << num_windows;
+    }
+  }
+
+  LOG(INFO) << "Number of images: " << image_index+1;
+
+  for (map<int, int>::iterator it = label_hist.begin();
+      it != label_hist.end(); ++it) {
+    LOG(INFO) << "class " << it->first << " has " << label_hist[it->first]
+              << " samples";
+  }
+
+  LOG(INFO) << "Amount of context padding: "
+      << this->layer_param_.qdata_param().context_pad();
+
+  LOG(INFO) << "Crop mode: " << this->layer_param_.qdata_param().crop_mode();
+
+  // image
+  const int crop_size = this->layer_param_.qdata_param().crop_size();
+  const int batch_size = this->layer_param_.qdata_param().batch_size();
+  CHECK_GT(crop_size, 0);
+  (*top)[0]->Reshape(batch_size, channels, crop_size, crop_size);
+  this->prefetch_data_.Reshape(batch_size, channels, crop_size, crop_size);
+
+  LOG(INFO) << "output data size: " << (*top)[0]->num() << ","
+      << (*top)[0]->channels() << "," << (*top)[0]->height() << ","
+      << (*top)[0]->width();
+  // Structured label: Action, Reward, NextMaxQ
+  (*top)[1]->Reshape(batch_size, 3, 1, 1);
+  this->prefetch_label_.Reshape(batch_size, 3, 1, 1);
+  // State features
+  int totalFeatures = this->layer_param_.qdata_param().num_state_features() 
+                    + this->layer_param_.qdata_param().num_actions();
+  (*top)[2]->Reshape(batch_size, totalFeatures, 1, 1);
+  this->prefetch_state_features_.Reshape(batch_size, totalFeatures, 1, 1);
+}
+
+template <typename Dtype>
+unsigned int QDataLayer<Dtype>::PrefetchRand() {
+  CHECK(prefetch_rng_);
+  caffe::rng_t* prefetch_rng =
+      static_cast<caffe::rng_t*>(prefetch_rng_->generator());
+  return (*prefetch_rng)();
+}
+
+// Thread fetching the data
+template <typename Dtype>
+void QDataLayer<Dtype>::InternalThreadEntry() {
   // At each iteration, sample N windows where N*p are foreground (object)
   // windows and N*(1-p) are background (non-object) windows
 
-  Dtype* top_data = layer->prefetch_data_->mutable_cpu_data();
-  Dtype* top_label = layer->prefetch_label_->mutable_cpu_data();
-  Dtype* top_state_features = layer->prefetch_state_features_->mutable_cpu_data();
-  const Dtype scale = layer->layer_param_.scale();
-  const int batchsize = layer->layer_param_.batchsize();
-  const int cropsize = layer->layer_param_.cropsize();
-  const int context_pad = layer->layer_param_.det_context_pad();
-  const bool mirror = layer->layer_param_.mirror();
-  const float fg_fraction = layer->layer_param_.det_fg_fraction();
-  const Dtype* mean = layer->data_mean_.cpu_data();
-  const int mean_off = (layer->data_mean_.width() - cropsize) / 2;
-  const int mean_width = layer->data_mean_.width();
-  const int mean_height = layer->data_mean_.height();
-  cv::Size cv_crop_size(cropsize, cropsize);
-  const string& crop_mode = layer->layer_param_.det_crop_mode();
+  Dtype* top_data = this->prefetch_data_.mutable_cpu_data();
+  Dtype* top_label = this->prefetch_label_.mutable_cpu_data();
+  Dtype* top_state_features = this->prefetch_state_features_.mutable_cpu_data();
+  const Dtype scale = this->layer_param_.qdata_param().scale();
+  const int batchsize = this->layer_param_.qdata_param().batch_size();
+  const int crop_size = this->layer_param_.qdata_param().crop_size();
+  const int context_pad = this->layer_param_.qdata_param().context_pad();
+  const bool mirror = this->layer_param_.qdata_param().mirror();
+  const Dtype* mean = this->data_mean_.cpu_data();
+  const int mean_off = (this->data_mean_.width() - crop_size) / 2;
+  const int mean_width = this->data_mean_.width();
+  const int mean_height = this->data_mean_.height();
+  cv::Size cv_crop_size(crop_size, crop_size);
+  const string& crop_mode = this->layer_param_.qdata_param().crop_mode();
 
   bool use_square = (crop_mode == "square") ? true : false;
-  const int stateFeatures = layer->layer_param_.num_state_features(); 
-  const int numActions = layer->layer_param_.num_actions();
+  const int stateFeatures = this->layer_param_.qdata_param().num_state_features(); 
+  const int numActions = this->layer_param_.qdata_param().num_actions();
   int totalStateFeatures = stateFeatures + numActions;
 
   // zero out batch
-  memset(top_data, 0, sizeof(Dtype)*layer->prefetch_data_->count());
-
-  /*const int num_fg = static_cast<int>(static_cast<float>(batchsize)
-      * fg_fraction);*/
+  caffe_set(this->prefetch_data_.count(), Dtype(0), top_data);
 
   int itemid = 0;
   // sample from bg set then fg set
   for (int dummy = 0; dummy < batchsize; ++dummy) {
       // sample a window
-      vector<float> window = layer->windows_[rand() % layer->windows_.size()];
+      vector<float> window = this->windows_[rand() % this->windows_.size()];
 
       bool do_mirror = false;
       // NOLINT_NEXT_LINE(runtime/threadsafe_fn)
@@ -79,12 +211,12 @@ void* QDataLayerPrefetch(void* layer_pointer) {
 
       // load the image containing the window
       pair<std::string, vector<int> > image =
-          layer->image_database_[window[QDataLayer<Dtype>::IMAGE_INDEX]];
+          this->image_database_[window[QDataLayer<Dtype>::IMAGE_INDEX]];
 
       cv::Mat cv_img = cv::imread(image.first, CV_LOAD_IMAGE_COLOR);
       if (!cv_img.data) {
         LOG(ERROR) << "Could not open or find file " << image.first;
-        return reinterpret_cast<void*>(NULL);
+        return;
       }
       const int channels = cv_img.channels();
 
@@ -98,10 +230,10 @@ void* QDataLayerPrefetch(void* layer_pointer) {
       int pad_h = 0;
       if (context_pad > 0 || use_square) {
         // scale factor by which to expand the original region
-        // such that after warping the expanded region to cropsize x cropsize
+        // such that after warping the expanded region to crop_size x crop_size
         // there's exactly context_pad amount of padding on each side
-        Dtype context_scale = static_cast<Dtype>(cropsize) /
-            static_cast<Dtype>(cropsize - 2*context_pad);
+        Dtype context_scale = static_cast<Dtype>(crop_size) /
+            static_cast<Dtype>(crop_size - 2*context_pad);
 
         // compute the expanded region
         Dtype half_height = static_cast<Dtype>(y2-y1+1)/2.0;
@@ -145,9 +277,9 @@ void* QDataLayerPrefetch(void* layer_pointer) {
         // scale factors that would be used to warp the unclipped
         // expanded region
         Dtype scale_x =
-            static_cast<Dtype>(cropsize)/static_cast<Dtype>(unclipped_width);
+            static_cast<Dtype>(crop_size)/static_cast<Dtype>(unclipped_width);
         Dtype scale_y =
-            static_cast<Dtype>(cropsize)/static_cast<Dtype>(unclipped_height);
+            static_cast<Dtype>(crop_size)/static_cast<Dtype>(unclipped_height);
 
         // size to warp the clipped expanded region to
         cv_crop_size.width =
@@ -168,12 +300,12 @@ void* QDataLayerPrefetch(void* layer_pointer) {
         }
 
         // ensure that the warped, clipped region plus the padding
-        // fits in the cropsize x cropsize image (it might not due to rounding)
-        if (pad_h + cv_crop_size.height > cropsize) {
-          cv_crop_size.height = cropsize - pad_h;
+        // fits in the crop_size x crop_size image (it might not due to rounding)
+        if (pad_h + cv_crop_size.height > crop_size) {
+          cv_crop_size.height = crop_size - pad_h;
         }
-        if (pad_w + cv_crop_size.width > cropsize) {
-          cv_crop_size.width = cropsize - pad_w;
+        if (pad_w + cv_crop_size.width > crop_size) {
+          cv_crop_size.width = crop_size - pad_w;
         }
       }
 
@@ -194,8 +326,8 @@ void* QDataLayerPrefetch(void* layer_pointer) {
             Dtype pixel =
                 static_cast<Dtype>(cv_cropped_img.at<cv::Vec3b>(h, w)[c]);
 
-            top_data[((itemid * channels + c) * cropsize + h + pad_h)
-                     * cropsize + w + pad_w]
+            top_data[((itemid * channels + c) * crop_size + h + pad_h)
+                     * crop_size + w + pad_w]
                 = (pixel
                     - mean[(c * mean_height + h + mean_off + pad_h)
                            * mean_width + w + mean_off + pad_w])
@@ -250,231 +382,21 @@ void* QDataLayerPrefetch(void* layer_pointer) {
           string("_data.txt")).c_str(),
           std::ofstream::out | std::ofstream::binary);
       for (int c = 0; c < channels; ++c) {
-        for (int h = 0; h < cropsize; ++h) {
-          for (int w = 0; w < cropsize; ++w) {
+        for (int h = 0; h < crop_size; ++h) {
+          for (int w = 0; w < crop_size; ++w) {
             top_data_file.write(reinterpret_cast<char*>(
-                &top_data[((itemid * channels + c) * cropsize + h)
-                          * cropsize + w]),
+                &top_data[((itemid * channels + c) * crop_size + h)
+                          * crop_size + w]),
                 sizeof(Dtype));
           }
         }
       }
       top_data_file.close();
       #endif
-
       itemid++;
   }
-
-  return reinterpret_cast<void*>(NULL);
 }
 
-template <typename Dtype>
-QDataLayer<Dtype>::~QDataLayer<Dtype>() {
-  CHECK(!pthread_join(thread_, NULL)) << "Pthread joining failed.";
-}
-
-template <typename Dtype>
-void QDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
-      vector<Blob<Dtype>*>* top) {
-  // SetUp runs through the window_file and creates two structures
-  // that hold windows: one for foreground (object) windows and one
-  // for background (non-object) windows. We use an overlap threshold
-  // to decide which is which.
-
-  CHECK_EQ(bottom.size(), 0) << "Q data Layer takes no input blobs.";
-  CHECK_EQ(top->size(), 3) << "Q data Layer prodcues three blobs as output.";
-
-  // window_file format
-  // repeated:
-  //    # image_index
-  //    img_path (abs path)
-  //    channels
-  //    height
-  //    width
-  //    num_windows
-  //    class_index action reward maxNextQ x1 y1 x2 y2 stateFeatures ... prevAction
-
-  LOG(INFO) << "Q data layer:" << std::endl
-      << "  Number of actions: "
-      << this->layer_param_.num_actions() << std::endl
-      << "  Number of state features: "
-      << this->layer_param_.num_state_features();
-
-  std::ifstream infile(this->layer_param_.source().c_str());
-  CHECK(infile.good()) << "Failed to open window file "
-      << this->layer_param_.source() << std::endl;
-
-  map<int, int> label_hist;
-  label_hist.insert(std::make_pair(0, 0));
-
-  string hashtag;
-  int image_index, channels;
-  while (infile >> hashtag >> image_index) {
-    CHECK_EQ(hashtag, "#");
-    // read image path
-    string image_path;
-    infile >> image_path;
-    // read image dimensions
-    vector<int> image_size(3);
-    infile >> image_size[0] >> image_size[1] >> image_size[2];
-    channels = image_size[0];
-    image_database_.push_back(std::make_pair(image_path, image_size));
-
-    // read each box
-    int num_windows;
-    infile >> num_windows;
-    for (int i = 0; i < num_windows; ++i) {
-      vector<float> window(QDataLayer::NUM + this->layer_param_.num_state_features());
-      int action, x1, y1, x2, y2, prevAction;
-      float reward, discountedMaxQ, feature;
-      infile >> action >> reward >> discountedMaxQ >> x1 >> y1 >> x2 >> y2;
-      for (int j = 0; j < this->layer_param_.num_state_features(); ++j) {
-        infile >> feature;
-        window[QDataLayer::NUM + j] = feature;
-      }
-      infile >> prevAction;
-
-      window[QDataLayer::IMAGE_INDEX] = image_index;
-      window[QDataLayer::ACTION] = action;
-      window[QDataLayer::REWARD] = reward;
-      window[QDataLayer::DISCOUNTEDMAXQ] = discountedMaxQ;
-      window[QDataLayer::X1] = x1;
-      window[QDataLayer::Y1] = y1;
-      window[QDataLayer::X2] = x2;
-      window[QDataLayer::Y2] = y2;
-      window[QDataLayer::PREV_ACTION] = prevAction;
-
-      // add window to list
-      int label = window[QDataLayer::ACTION];
-      CHECK_GT(label, -1);
-      windows_.push_back(window);
-      label_hist.insert(std::make_pair(label, 0));
-      label_hist[label]++;
-    }
-
-    if (image_index % 100 == 0) {
-      LOG(INFO) << "num: " << image_index << " "
-          << image_path << " "
-          << image_size[0] << " "
-          << image_size[1] << " "
-          << image_size[2] << " "
-          << "windows to process: " << num_windows;
-    }
-  }
-
-  LOG(INFO) << "Number of images: " << image_index+1;
-
-  for (map<int, int>::iterator it = label_hist.begin();
-      it != label_hist.end(); ++it) {
-    LOG(INFO) << "class " << it->first << " has " << label_hist[it->first]
-              << " samples";
-  }
-
-  LOG(INFO) << "Amount of context padding: "
-      << this->layer_param_.det_context_pad();
-
-  LOG(INFO) << "Crop mode: " << this->layer_param_.det_crop_mode();
-
-  // image
-  int cropsize = this->layer_param_.cropsize();
-  CHECK_GT(cropsize, 0);
-  (*top)[0]->Reshape(
-      this->layer_param_.batchsize(), channels, cropsize, cropsize);
-  prefetch_data_.reset(new Blob<Dtype>(
-      this->layer_param_.batchsize(), channels, cropsize, cropsize));
-
-  LOG(INFO) << "output data size: " << (*top)[0]->num() << ","
-      << (*top)[0]->channels() << "," << (*top)[0]->height() << ","
-      << (*top)[0]->width();
-  // Structured label: Action, Reward, NextMaxQ
-  (*top)[1]->Reshape(this->layer_param_.batchsize(), 3, 1, 1);
-  prefetch_label_.reset(
-      new Blob<Dtype>(this->layer_param_.batchsize(), 3, 1, 1));
-  // State features
-  int totalFeatures = this->layer_param_.num_state_features() + this->layer_param_.num_actions();
-  (*top)[2]->Reshape(this->layer_param_.batchsize(), totalFeatures, 1, 1);
-  prefetch_state_features_.reset(
-      new Blob<Dtype>(this->layer_param_.batchsize(), totalFeatures, 1, 1)
-  );
-
-  // check if we want to have mean
-  if (this->layer_param_.has_meanfile()) {
-    BlobProto blob_proto;
-    LOG(INFO) << "Loading mean file from" << this->layer_param_.meanfile();
-    ReadProtoFromBinaryFile(this->layer_param_.meanfile().c_str(), &blob_proto);
-    data_mean_.FromProto(blob_proto);
-    CHECK_EQ(data_mean_.num(), 1);
-    CHECK_EQ(data_mean_.width(), data_mean_.height());
-    CHECK_EQ(data_mean_.channels(), channels);
-  } else {
-    // Simply initialize an all-empty mean.
-    data_mean_.Reshape(1, channels, cropsize, cropsize);
-  }
-  // Now, start the prefetch thread. Before calling prefetch, we make two
-  // cpu_data calls so that the prefetch thread does not accidentally make
-  // simultaneous cudaMalloc calls when the main thread is running. In some
-  // GPUs this seems to cause failures if we do not so.
-  prefetch_data_->mutable_cpu_data();
-  prefetch_label_->mutable_cpu_data();
-  prefetch_state_features_->mutable_cpu_data();
-  data_mean_.cpu_data();
-  DLOG(INFO) << "Initializing prefetch";
-  CHECK(!pthread_create(&thread_, NULL, QDataLayerPrefetch<Dtype>,
-      reinterpret_cast<void*>(this))) << "Pthread execution failed.";
-  DLOG(INFO) << "Prefetch initialized.";
-}
-
-template <typename Dtype>
-void QDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
-      vector<Blob<Dtype>*>* top) {
-  // First, join the thread
-  CHECK(!pthread_join(thread_, NULL)) << "Pthread joining failed.";
-  // Copy the data
-  memcpy((*top)[0]->mutable_cpu_data(), prefetch_data_->cpu_data(),
-      sizeof(Dtype) * prefetch_data_->count());
-  memcpy((*top)[1]->mutable_cpu_data(), prefetch_label_->cpu_data(),
-      sizeof(Dtype) * prefetch_label_->count());
-  memcpy((*top)[2]->mutable_cpu_data(), prefetch_state_features_->cpu_data(),
-      sizeof(Dtype) * prefetch_state_features_->count());
-
-  // Start a new prefetch thread
-  CHECK(!pthread_create(&thread_, NULL, QDataLayerPrefetch<Dtype>,
-      reinterpret_cast<void*>(this))) << "Pthread execution failed.";
-}
-
-template <typename Dtype>
-void QDataLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
-      vector<Blob<Dtype>*>* top) {
-  // First, join the thread
-  CHECK(!pthread_join(thread_, NULL)) << "Pthread joining failed.";
-  // Copy the data
-  CUDA_CHECK(cudaMemcpy((*top)[0]->mutable_gpu_data(),
-      prefetch_data_->cpu_data(), sizeof(Dtype) * prefetch_data_->count(),
-      cudaMemcpyHostToDevice));
-  CUDA_CHECK(cudaMemcpy((*top)[1]->mutable_gpu_data(),
-      prefetch_label_->cpu_data(), sizeof(Dtype) * prefetch_label_->count(),
-      cudaMemcpyHostToDevice));
-  CUDA_CHECK(cudaMemcpy((*top)[2]->mutable_gpu_data(),
-      prefetch_state_features_->cpu_data(), sizeof(Dtype) * prefetch_state_features_->count(),
-      cudaMemcpyHostToDevice));
-
-  // Start a new prefetch thread
-  CHECK(!pthread_create(&thread_, NULL, QDataLayerPrefetch<Dtype>,
-      reinterpret_cast<void*>(this))) << "Pthread execution failed.";
-}
-
-// The backward operations are dummy - they do not carry any computation.
-template <typename Dtype>
-Dtype QDataLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
-      const bool propagate_down, vector<Blob<Dtype>*>* bottom) {
-  return Dtype(0.);
-}
-
-template <typename Dtype>
-Dtype QDataLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
-      const bool propagate_down, vector<Blob<Dtype>*>* bottom) {
-  return Dtype(0.);
-}
 
 INSTANTIATE_CLASS(QDataLayer);
 
