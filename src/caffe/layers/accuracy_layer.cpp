@@ -77,7 +77,7 @@ void ActionAccuracyLayer<Dtype>::Reshape(
       << "The data and label should have the same number.";
   CHECK_LE(top_k_, bottom[0]->count() / bottom[0]->num())
       << "top_k must be less than or equal to the number of classes.";
-  CHECK_EQ(bottom[1]->channels(), 1);
+  CHECK_EQ(bottom[1]->channels(), 3);
   CHECK_EQ(bottom[1]->height(), 1);
   CHECK_EQ(bottom[1]->width(), 1);
   (*top)[0]->Reshape(1, 1, 1, 1);

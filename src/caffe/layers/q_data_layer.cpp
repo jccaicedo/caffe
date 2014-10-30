@@ -39,7 +39,7 @@ QDataLayer<Dtype>::~QDataLayer<Dtype>() {
 }
 
 template <typename Dtype>
-void QDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
+void QDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
       vector<Blob<Dtype>*>* top) {
   // SetUp runs through the window_file and creates two structures
   // that hold windows: one for foreground (object) windows and one

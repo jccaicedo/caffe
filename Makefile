@@ -170,7 +170,7 @@ LIBRARIES += glog gflags protobuf leveldb snappy \
 	boost_system \
 	hdf5_hl hdf5 \
 	opencv_core opencv_highgui opencv_imgproc opencv_gpu pthread
-PYTHON_LIBRARIES := boost_python python2.7
+PYTHON_LIBRARIES := boost_python python2.6
 WARNINGS := -Wall -Wno-sign-compare
 
 ##############################
@@ -232,7 +232,7 @@ ifeq ($(LINUX), 1)
 		WARNINGS += -Wno-uninitialized
 	endif
 	# boost::thread is reasonably called boost_thread (compare OS X)
-	LIBRARIES += boost_thread-mt
+	LIBRARIES += boost_thread
 endif
 
 # OS X:

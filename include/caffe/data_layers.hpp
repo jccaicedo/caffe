@@ -356,7 +356,7 @@ class NoLevelDBDataLayer : public BasePrefetchingDataLayer<Dtype> {
   explicit NoLevelDBDataLayer(const LayerParameter& param)
       : BasePrefetchingDataLayer<Dtype>(param) {}
   virtual ~NoLevelDBDataLayer();
-  virtual void SetUp(const vector<Blob<Dtype>*>& bottom,
+  virtual void DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
       vector<Blob<Dtype>*>* top);
 
   virtual inline LayerParameter_LayerType type() const {
@@ -384,7 +384,7 @@ class QDataLayer : public BasePrefetchingDataLayer<Dtype> {
   explicit QDataLayer(const LayerParameter& param)
       : BasePrefetchingDataLayer<Dtype>(param) {}
   virtual ~QDataLayer();
-  virtual void SetUp(const vector<Blob<Dtype>*>& bottom,
+  virtual void DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
       vector<Blob<Dtype>*>* top);
 
   virtual inline LayerParameter_LayerType type() const {
@@ -415,7 +415,7 @@ class PlainDataLayer : public BasePrefetchingDataLayer<Dtype> {
   explicit PlainDataLayer(const LayerParameter& param)
       : BasePrefetchingDataLayer<Dtype>(param) {}
   virtual ~PlainDataLayer();
-  virtual void SetUp(const vector<Blob<Dtype>*>& bottom,
+  virtual void DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
       vector<Blob<Dtype>*>* top);
 
   virtual inline LayerParameter_LayerType type() const {

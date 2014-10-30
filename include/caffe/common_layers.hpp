@@ -397,7 +397,7 @@ class QLearningLayer : public Layer<Dtype> {
       vector<Blob<Dtype>*>* top);
 
   virtual inline LayerParameter_LayerType type() const {
-    return LayerParameter_LayerType_QLEARNING;
+    return LayerParameter_LayerType_QVALUES;
   }
   virtual inline int ExactNumBottomBlobs() const { return 1; }
   virtual inline int ExactNumTopBlobs() const { return 1; }

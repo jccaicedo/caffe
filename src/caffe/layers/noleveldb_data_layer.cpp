@@ -38,7 +38,7 @@ NoLevelDBDataLayer<Dtype>::~NoLevelDBDataLayer<Dtype>() {
 }
 
 template <typename Dtype>
-void NoLevelDBDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
+void NoLevelDBDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
       vector<Blob<Dtype>*>* top) {
   // SetUp runs through the window_file and creates two structures 
   // that hold windows: one for foreground (object) windows and one 

@@ -43,12 +43,9 @@ void QLearningLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     vector<Blob<Dtype>*>* top) {
   const Dtype* bottom_data = bottom[0]->gpu_data();
   Dtype* top_data = (*top)[0]->mutable_gpu_data();
-  Dtype* scale_data = scale_.mutable_gpu_data();
   int num = bottom[0]->num();
   int dim = bottom[0]->count() / bottom[0]->num();
-  CUDA_CHECK(cudaMemcpy(top_data, bottom_data,
-      sizeof(Dtype) * bottom[0]->count(), cudaMemcpyDeviceToDevice));
-
+  caffe_copy(bottom[0]->count(), bottom_data, top_data);
 }
 
 // TODO(Yangqing): implement the GPU version of softmax.

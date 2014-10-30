@@ -37,7 +37,7 @@ PlainDataLayer<Dtype>::~PlainDataLayer<Dtype>() {
 }
 
 template <typename Dtype>
-void PlainDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
+void PlainDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bottom,
       vector<Blob<Dtype>*>* top) {
   // SetUp runs through the window_file and creates two structures
   // that hold windows: one for foreground (object) windows and one
@@ -93,12 +93,20 @@ void PlainDataLayer<Dtype>::SetUp(const vector<Blob<Dtype>*>& bottom,
               << " samples";
   }
 
+  // Input data
   (*top)[0]->Reshape(
       this->layer_param_.plaindata_param().batch_size(), 
       this->layer_param_.plaindata_param().num_state_features(), 1, 1);
   this->prefetch_data_.Reshape(
       this->layer_param_.plaindata_param().batch_size(),
       this->layer_param_.plaindata_param().num_state_features(), 1, 1);
+
+  // datum size
+  this->datum_channels_ = (*top)[0]->channels();
+  this->datum_height_ = (*top)[0]->height();
+  this->datum_width_ = (*top)[0]->width();
+  this->datum_size_ =
+      (*top)[0]->channels() * (*top)[0]->height() * (*top)[0]->width();
 
   LOG(INFO) << "output data size: " << (*top)[0]->num() << ","
       << (*top)[0]->channels() << "," << (*top)[0]->height() << ","

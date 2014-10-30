@@ -253,7 +253,7 @@ Layer<Dtype>* GetLayer(const LayerParameter& param) {
     return new WindowDataLayer<Dtype>(param);
   case LayerParameter_LayerType_NOLEVELDB:
     return new NoLevelDBDataLayer<Dtype>(param);
-  case LayerParameter_LayerType_QLEARNING:
+  case LayerParameter_LayerType_QVALUES:
     return new QLearningLayer<Dtype>(param);
   case LayerParameter_LayerType_QLOSS:
     return new QLearningWithLossLayer<Dtype>(param);
