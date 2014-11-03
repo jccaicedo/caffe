@@ -32,6 +32,8 @@ class Solver {
     return test_nets_;
   }
 
+ int iter() { return iter_; }
+
  protected:
   // PreSolve is run before any solving iteration starts, allowing one to
   // put up some scaffold.

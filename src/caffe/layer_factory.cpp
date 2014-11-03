@@ -263,6 +263,8 @@ Layer<Dtype>* GetLayer(const LayerParameter& param) {
     return new PlainDataLayer<Dtype>(param);
   case LayerParameter_LayerType_ACTION_ACC:
     return new ActionAccuracyLayer<Dtype>(param);
+  case LayerParameter_LayerType_QMEMORY_DATA:
+    return new QMemoryDataLayer<Dtype>(param);
   case LayerParameter_LayerType_NONE:
     LOG(FATAL) << "Layer " << name << " has unspecified type.";
   default:

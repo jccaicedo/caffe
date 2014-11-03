@@ -2,6 +2,7 @@
 // caffe::Caffe functions so that one could easily call it from Python.
 // Note that for Python, we will simply use float as the data type.
 
+#include <boost/make_shared.hpp>
 #include <boost/python/suite/indexing/vector_indexing_suite.hpp>
 
 // these need to be included after boost on OS X
@@ -186,12 +187,12 @@ void PyNet::ForwardRegionsAndState(bp::list boxes, int context_pad, bp::list sta
 }
 
 void PyNet::set_input_arrays(bp::object data_obj, bp::object labels_obj) {
-  // check that this network has an input MemoryDataLayer
-  shared_ptr<MemoryDataLayer<float> > md_layer =
-    boost::dynamic_pointer_cast<MemoryDataLayer<float> >(net_->layers()[0]);
+  // check that this network has an input QMemoryDataLayer
+  shared_ptr<QMemoryDataLayer<float> > md_layer =
+    boost::dynamic_pointer_cast<QMemoryDataLayer<float> >(net_->layers()[0]);
   if (!md_layer) {
     throw std::runtime_error("set_input_arrays may only be called if the"
-        " first layer is a MemoryDataLayer");
+        " first layer is a QMemoryDataLayer");
   }
 
   // check that we were passed appropriately-sized contiguous memory
@@ -201,7 +202,7 @@ void PyNet::set_input_arrays(bp::object data_obj, bp::object labels_obj) {
       reinterpret_cast<PyArrayObject*>(labels_obj.ptr());
   check_contiguous_array(data_arr, "data array", md_layer->datum_channels(),
       md_layer->datum_height(), md_layer->datum_width());
-  check_contiguous_array(labels_arr, "labels array", 1, 1, 1);
+  check_contiguous_array(labels_arr, "labels array", 3, 1, 1);
   if (PyArray_DIMS(data_arr)[0] != PyArray_DIMS(labels_arr)[0]) {
     throw std::runtime_error("data and labels must have the same first"
         " dimension");
@@ -283,8 +284,13 @@ BOOST_PYTHON_MODULE(_caffe) {
   bp::class_<PySGDSolver, boost::noncopyable>(
       "SGDSolver", bp::init<string>())
       .add_property("net", &PySGDSolver::net)
+      .add_property("test_nets", &PySGDSolver::test_nets)
+      .add_property("iter",      &PySGDSolver::iter)
       .def("solve",        &PySGDSolver::Solve)
       .def("solve",        &PySGDSolver::SolveResume);
+
+  bp::class_<vector<shared_ptr<PyNet> > >("NetVec")
+      .def(bp::vector_indexing_suite<vector<shared_ptr<PyNet> >, true>());
 
   bp::class_<vector<PyBlob<float> > >("BlobVec")
       .def(bp::vector_indexing_suite<vector<PyBlob<float> >, true>());
