@@ -14,37 +14,24 @@ using std::max;
 namespace caffe {
 
 template <typename Dtype>
-void QLearningWithLossLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
-      vector<Blob<Dtype>*>* top) {
-  LossLayer<Dtype>::LayerSetUp(bottom, top);
-  qlearning_bottom_vec_.clear();
-  qlearning_bottom_vec_.push_back(bottom[0]);
-  qlearning_top_vec_.clear();
-  qlearning_top_vec_.push_back(&prob_);
-  qlearning_layer_->SetUp(qlearning_bottom_vec_, &qlearning_top_vec_);
-}
-
-template <typename Dtype>
 void QLearningWithLossLayer<Dtype>::Reshape(
     const vector<Blob<Dtype>*>& bottom, vector<Blob<Dtype>*>* top) {
   LossLayer<Dtype>::Reshape(bottom, top);
-  qlearning_layer_->Reshape(qlearning_bottom_vec_, &qlearning_top_vec_);
-  if (top->size() >= 2) {
-    (*top)[1]->ReshapeLike(*bottom[0]);
-  }
+  //CHECK_EQ(bottom[0]->channels(), bottom[1]->channels());
+  //CHECK_EQ(bottom[0]->height(), bottom[1]->height());
+  //CHECK_EQ(bottom[0]->width(), bottom[1]->width());
+  diff_.Reshape(bottom[0]->num(), bottom[0]->channels(),
+      bottom[0]->height(), bottom[0]->width());
 }
 
 template <typename Dtype>
 void QLearningWithLossLayer<Dtype>::Forward_cpu(
     const vector<Blob<Dtype>*>& bottom, vector<Blob<Dtype>*>* top) {
-  // The forward pass computes the qlearning prob values.
-  qlearning_bottom_vec_[0] = bottom[0];
-  qlearning_layer_->Forward(qlearning_bottom_vec_, &qlearning_top_vec_);
-  const Dtype* prob_data = prob_.cpu_data();
+  const Dtype* qvalues = bottom[0]->cpu_data();
   const Dtype* label = bottom[1]->cpu_data();
   Dtype loss = 0;
-  int num = prob_.num();
-  int dim = prob_.count() / num;
+  int num = diff_.num();
+  int dim = diff_.count() / num;
   for (int i = 0; i < num; ++i) {
     int action = static_cast<int>(label[i*3 + 0]);
     Dtype reward = label[i*3 + 1];
@@ -52,7 +39,7 @@ void QLearningWithLossLayer<Dtype>::Forward_cpu(
     for (int j = 0; j < dim; ++j) {
       if (action == j) {
         Dtype y = (reward + discountedMaxQ);
-        loss += (y - prob_data[i * dim + action])*(y - prob_data[i * dim + action]);
+        loss += (y - qvalues[i * dim + action])*(y - qvalues[i * dim + action]);
       }
     }
   }
@@ -69,11 +56,10 @@ void QLearningWithLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top
   }
   if (propagate_down[0]) {
     Dtype* bottom_diff = (*bottom)[0]->mutable_cpu_diff();
-    const Dtype* prob_data = prob_.cpu_data();
-    caffe_copy(prob_.count(), prob_data, bottom_diff);
+    const Dtype* qvalues = (*bottom)[0]->cpu_data();
     const Dtype* label = (*bottom)[1]->cpu_data();
-    int num = prob_.num();
-    int dim = prob_.count() / num;
+    int num = diff_.num();
+    int dim = diff_.count() / num;
     for (int i = 0; i < num; ++i) {
       int action = static_cast<int>(label[i*3 + 0]);
       Dtype reward = label[i*3 + 1];
@@ -81,16 +67,16 @@ void QLearningWithLossLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top
       for (int j = 0; j < dim; ++j) {
         if (action == j) {
           Dtype y = (reward + discountedMaxQ);
-          bottom_diff[i * dim + action] -= y;
-          //LOG(INFO) << i << " " << action << " " << reward << " " << discountedMaxQ << " " << prob_data[i * dim + action];
+          bottom_diff[i * dim + action] = qvalues[i * dim + action] - y;
+          LOG(INFO) << i << " [" << action << "; " << reward << "; " << discountedMaxQ << "] " << qvalues[i * dim + action] << " # " << bottom_diff[i * dim + action];
         } else {
           // Only update connections associated to the action
-          bottom_diff[i * dim + j] = 0.0;
+          bottom_diff[i * dim + j] = Dtype(0);
         }
       }
     }
     // Scale down gradient
-    caffe_scal(prob_.count(), Dtype(1) / num, bottom_diff);
+    caffe_scal(diff_.count(), Dtype(1) / num, bottom_diff);
   }
 }
 

@@ -42,12 +42,12 @@ void QMemoryDataLayer<Dtype>::AddDatumVector(const vector<Datum>& datum_vector) 
 
   Dtype* top_data = added_data_.mutable_cpu_data();
   Dtype* top_label = added_label_.mutable_cpu_data();
-  for (int batch_item_id = 0; batch_item_id < num; ++batch_item_id) {
+  /*for (int batch_item_id = 0; batch_item_id < num; ++batch_item_id) {
     // Apply data transformations (mirror, scale, crop...)
     this->data_transformer_.Transform(
         batch_item_id, datum_vector[batch_item_id], this->mean_, top_data);
     top_label[batch_item_id] = datum_vector[batch_item_id].label();
-  }
+  }*/
   // num_images == batch_size_
   Reset(top_data, top_label, batch_size_);
   has_new_data_ = true;
@@ -69,7 +69,7 @@ void QMemoryDataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       vector<Blob<Dtype>*>* top) {
   CHECK(data_) << "QMemoryDataLayer needs to be initalized by calling Reset";
   (*top)[0]->set_cpu_data(data_ + pos_ * this->datum_size_);
-  (*top)[1]->set_cpu_data(labels_ + pos_);
+  (*top)[1]->set_cpu_data(labels_ + pos_ * 3);
   pos_ = (pos_ + batch_size_) % n_;
   has_new_data_ = false;
 }

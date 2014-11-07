@@ -763,29 +763,17 @@ class SoftmaxWithLossLayer : public LossLayer<Dtype> {
   vector<Blob<Dtype>*> softmax_top_vec_;
 };
 
-template <typename Dtype> class QLearningLayer;
-
 template <typename Dtype>
 class QLearningWithLossLayer : public LossLayer<Dtype> {
  public:
   explicit QLearningWithLossLayer(const LayerParameter& param)
-      : LossLayer<Dtype>(param),
-        qlearning_layer_(new QLearningLayer<Dtype>(param)) {}
-  virtual void LayerSetUp(const vector<Blob<Dtype>*>& bottom,
-      vector<Blob<Dtype>*>* top);
-
+      : LossLayer<Dtype>(param), diff_() {}
   virtual void Reshape(const vector<Blob<Dtype>*>& bottom,
       vector<Blob<Dtype>*>* top);
 
   virtual inline LayerParameter_LayerType type() const {
     return LayerParameter_LayerType_QLOSS;
   }
-  virtual inline int ExactNumBottomBlobs() const { return -1; }
-  virtual inline int MinBottomBlobs() const { return 2; }
-  virtual inline int MaxBottomBlobs() const { return 3; }
-  virtual inline int ExactNumTopBlobs() const { return -1; }
-  virtual inline int MinTopBlobs() const { return 1; }
-  virtual inline int MaxTopBlobs() const { return 2; }
 
  protected:
   virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
@@ -798,14 +786,7 @@ class QLearningWithLossLayer : public LossLayer<Dtype> {
   virtual void Backward_gpu(const vector<Blob<Dtype>*>& top,
       const vector<bool>& propagate_down, vector<Blob<Dtype>*>* bottom);
 
-  /// The internal QLearningLayer used to map predictions to a distribution.
-  shared_ptr<QLearningLayer<Dtype> > qlearning_layer_;
-  /// prob stores the output probability predictions of the Q Values.
-  Blob<Dtype> prob_;
-  /// bottom vector holder used in call to the underlying Forward
-  vector<Blob<Dtype>*> qlearning_bottom_vec_;
-  /// top vector holder used in call to the underlying Forward
-  vector<Blob<Dtype>*> qlearning_top_vec_;
+  Blob<Dtype> diff_;
 
 };
 
