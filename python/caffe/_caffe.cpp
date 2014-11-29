@@ -135,13 +135,8 @@ void PyNet::ForwardRegions(bp::list boxes, int context_pad /*, const string& ima
         sizeof(float) * input_blobs[j]->count(), cudaMemcpyDeviceToDevice);
   }
   // Forward the network
-  const vector<Blob<float>*>& output_blobs = net_->ForwardPrefilled();
-  // Download classification scores  
-  /* object elem = top[0];
-  PyArrayObject* arr = reinterpret_cast<PyArrayObject*>(elem.ptr());
-  check_array_against_blob(arr, output_blobs[0]);
-  cudaMemcpy(PyArray_DATA(arr), output_blobs[0]->gpu_data(),
-      sizeof(float) * output_blobs[0]->count(), cudaMemcpyDeviceToHost); */
+  //const vector<Blob<float>*>& output_blobs = net_->ForwardPrefilled();
+  net_->ForwardPrefilled();
 
   // Free temporary memory
   for(int j = 0; j < totalBoxes; ++j) delete data[j];
@@ -178,13 +173,35 @@ void PyNet::ForwardRegionsAndState(bp::list boxes, int context_pad, bp::list sta
       sizeof(float) * input_blobs[1]->count(), cudaMemcpyHostToDevice);
 
   // Forward the network
-  const vector<Blob<float>*>& output_blobs = net_->ForwardPrefilled();
+  //const vector<Blob<float>*>& output_blobs = net_->ForwardPrefilled();
+  net_->ForwardPrefilled();
 
   // Free temporary memory
   for(int j = 0; j < totalBoxes; ++j) delete data[j];
   delete data;
   CUDA_CHECK(cudaFree(dev_blob)); 
 }
+
+void PyNet::CoverRegions(bp::list boxes){
+  int totalBoxes = len(boxes);
+  // Prepare boxes coordinates
+  int ** data;
+  data = new int*[totalBoxes];
+  for(int j = 0; j < totalBoxes; ++j) {
+    data[j] = new int[4];
+    bp::list box(boxes[j]);
+    for(int k = 0; k < len(box); ++k) {
+      data[j][k] = boost::python::extract<int>(box[k]);
+    }
+  }
+  // Cover boxes in the GPU image
+  CoverBoxes_GpuMat(dev_src_image_, data, totalBoxes);
+
+  // Free temporary memory
+  for(int j = 0; j < totalBoxes; ++j) delete data[j];
+  delete data;
+}
+
 
 void PyNet::set_input_arrays(bp::object data_obj, bp::object labels_obj) {
   // check that this network has an input QMemoryDataLayer
@@ -253,6 +270,7 @@ BOOST_PYTHON_MODULE(_caffe) {
       .def("ForwardRegionsAndState",&PyNet::ForwardRegionsAndState)
       .def("InitializeImage",       &PyNet::InitializeImage)
       .def("ReleaseImageData",      &PyNet::ReleaseImageData)
+      .def("CoverRegions",          &PyNet::CoverRegions)
       .add_property("_blobs",       &PyNet::blobs)
       .add_property("layers",       &PyNet::layers)
       .add_property("_blob_names",  &PyNet::blob_names)

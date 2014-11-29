@@ -108,6 +108,7 @@ class PyNet {
   void ReleaseImageData();
   void ForwardRegions(bp::list boxes, int context_pad /*, const string& imageName*/);
   void ForwardRegionsAndState(bp::list boxes, int context_pad, bp::list state /*, const string& imageName*/);
+  void CoverRegions(bp::list boxes);
 
   void set_input_arrays(bp::object data_obj, bp::object labels_obj);
 

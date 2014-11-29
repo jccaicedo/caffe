@@ -266,7 +266,6 @@ message LayerParameter {
     QLOSS = 42;
     QDATA = 43;
     PLAIN_DATA = 44;
-    ACTION_ACC = 45; 
     QMEMORY_DATA = 46;
   }
   optional LayerType type = 5; // the layer type from the enum above

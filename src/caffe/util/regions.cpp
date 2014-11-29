@@ -144,6 +144,24 @@ Dtype* CropAndResizeBoxes_GpuMat(void* srcPrt, int ** boxes,
   return dev_blob;
 }
 
+// Crop and resize regions in the GPU
+void CoverBoxes_GpuMat(void* srcPrt, int ** boxes, int totalBoxes) {
+  cv::gpu::GpuMat* src = static_cast<cv::gpu::GpuMat*>(srcPrt);
+  for(int i = 0; i < totalBoxes; ++i) {
+    bbox region;
+    region.x1 = boxes[i][0];
+    region.y1 = boxes[i][1];
+    region.x2 = boxes[i][2];
+    region.y2 = boxes[i][3];
+    coverRegion(src->data, src->step, 3, region);
+  }
+  // Test to check that the covering function is working properly 
+  /*  cv::Mat dst_host2(*src);
+    std::stringstream outf2;
+    outf2 << "/home/caicedo/out_.jpg";
+    cv::imwrite(outf2.str(), dst_host2); */
+}
+
 // Explicit instantiation
 template float* CropAndResizeBoxes_GpuMat<float>(void* src /*const string& imageName*/, int ** boxes, 
                                    int totalBoxes, int context_pad, int cropsize, const float* meanImg);

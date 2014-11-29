@@ -61,6 +61,22 @@ __global__ void copyBlobToRegion_kernel(const Dtype* blob, unsigned char* image,
   }
 }
 
+// Kernel to cover a region in GPU image
+__global__ void coverRegion_kernel(unsigned char* sourceData, 
+                                        size_t srcstep, int channels, bbox region) {
+  const int xIndex = blockIdx.x * blockDim.x + threadIdx.x;
+  const int yIndex = blockIdx.y * blockDim.y + threadIdx.y;
+
+  if((region.x1 <= xIndex) && (region.y1 <= yIndex) &&
+     (xIndex < region.x2) && (yIndex < region.y2)){
+    const int pixelId = yIndex * srcstep + (channels * xIndex);
+    for(int c = 0; c < channels; ++c) {
+          sourceData[pixelId + c] = static_cast<unsigned char>(0);
+    }
+  }
+}
+
+
 // Call to the kernel to copy from region to blob
 template <typename Dtype>
 void copyRegionToBlob(const unsigned char* sourceData, Dtype* destData,
@@ -86,6 +102,16 @@ void copyBlobToRegion(const Dtype* blob, unsigned char* image,
                                   cols, channels, cropsize, meanImg, padding);
   CUDA_POST_KERNEL_CHECK;
 }
+
+// Call to the kernel to cover a region in an image
+void coverRegion(unsigned char* sourceData, size_t srcstep, int channels, bbox region) {
+  dim3 blockD(32, 32);
+  const dim3 grid((region.x2 + blockD.x - 1)/blockD.x, (region.y2 + blockD.y - 1)/blockD.y);
+  coverRegion_kernel<<<grid, blockD>>>(
+                                sourceData, srcstep, channels, region);
+  CUDA_POST_KERNEL_CHECK;
+}
+
 
 // Explicit instantiations
 template 
