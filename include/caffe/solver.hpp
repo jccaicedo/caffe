@@ -34,6 +34,8 @@ class Solver {
 
  int iter() { return iter_; }
 
+ void ChangeLearningRage(float new_lr) { param_.set_base_lr(new_lr); }
+
  protected:
   // PreSolve is run before any solving iteration starts, allowing one to
   // put up some scaffold.

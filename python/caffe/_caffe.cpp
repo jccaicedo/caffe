@@ -304,6 +304,7 @@ BOOST_PYTHON_MODULE(_caffe) {
       .add_property("net", &PySGDSolver::net)
       .add_property("test_nets", &PySGDSolver::test_nets)
       .add_property("iter",      &PySGDSolver::iter)
+      .def("change_lr",    &PySGDSolver::ChangeLearningRage)
       .def("solve",        &PySGDSolver::Solve)
       .def("solve",        &PySGDSolver::SolveResume);
 
