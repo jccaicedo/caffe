@@ -62,16 +62,33 @@ __global__ void copyBlobToRegion_kernel(const Dtype* blob, unsigned char* image,
 }
 
 // Kernel to cover a region in GPU image
-__global__ void coverRegion_kernel(unsigned char* sourceData, 
-                                        size_t srcstep, int channels, bbox region) {
+__global__ void coverRegion_kernel(unsigned char* sourceData, size_t srcstep, 
+                                   unsigned char* otherData, size_t otherStep,
+                                   int otherRows, int otherCols, bbox region, bool zeros) {
   const int xIndex = blockIdx.x * blockDim.x + threadIdx.x;
   const int yIndex = blockIdx.y * blockDim.y + threadIdx.y;
 
+  int channels = 3;
   if((region.x1 <= xIndex) && (region.y1 <= yIndex) &&
      (xIndex < region.x2) && (yIndex < region.y2)){
-    const int pixelId = yIndex * srcstep + (channels * xIndex);
-    for(int c = 0; c < channels; ++c) {
-          sourceData[pixelId + c] = static_cast<unsigned char>(0);
+    const int pixelSource = yIndex * srcstep + (channels * xIndex);
+    if(zeros) {
+      for(int c = 0; c < channels; ++c) {
+          sourceData[pixelSource + c] = static_cast<unsigned char>(0);
+      }
+    } else {
+      int xOther = xIndex;
+      int yOther = yIndex;
+      if(xOther >= otherCols) {
+        xOther = xOther - otherCols;
+      }
+      if(yIndex >= otherRows) {
+        yOther = yOther - otherRows;
+      }
+      const int pixelOther = yOther * otherStep + (channels * xOther);
+      for(int c = 0; c < channels; ++c) {
+          sourceData[pixelSource + c] = otherData[pixelOther + c];
+      }
     }
   }
 }
@@ -104,11 +121,13 @@ void copyBlobToRegion(const Dtype* blob, unsigned char* image,
 }
 
 // Call to the kernel to cover a region in an image
-void coverRegion(unsigned char* sourceData, size_t srcstep, int channels, bbox region) {
+void coverRegion(unsigned char* sourceData, size_t srcstep, 
+                 unsigned char* otherData, size_t otherStep,
+                 int otherRows, int otherCols, bbox region, bool zeros) {
   dim3 blockD(32, 32);
   const dim3 grid((region.x2 + blockD.x - 1)/blockD.x, (region.y2 + blockD.y - 1)/blockD.y);
   coverRegion_kernel<<<grid, blockD>>>(
-                                sourceData, srcstep, channels, region);
+                                sourceData, srcstep, otherData, otherStep, otherRows, otherCols, region, zeros);
   CUDA_POST_KERNEL_CHECK;
 }
 

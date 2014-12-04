@@ -42,10 +42,11 @@ void copyBlobToRegion(const Dtype* blob, unsigned char* image,
                       int channels, int cropsize, const Dtype* meanImg,
 			bbox padding);
 
-void coverRegion(unsigned char* sourceData, size_t srcstep,
-                      int channels, bbox region);
+void coverRegion(unsigned char* sourceData, size_t srcStep,
+                 unsigned char* otherData, size_t otherStep,
+                 int otherRows, int otherCols, bbox region, bool zeros);
 
-void CoverBoxes_GpuMat(void* srcPrt, int ** boxes, int totalBoxes, int nameid);
+void CoverBoxes_GpuMat(void* srcPrt, void* otherPrt, int ** boxes, int totalBoxes, int nameid, bool zeros);
 
 
 } // namespace

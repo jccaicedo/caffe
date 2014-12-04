@@ -145,21 +145,31 @@ Dtype* CropAndResizeBoxes_GpuMat(void* srcPrt, int ** boxes,
 }
 
 // Crop and resize regions in the GPU
-void CoverBoxes_GpuMat(void* srcPrt, int ** boxes, int totalBoxes, int nameid) {
+void CoverBoxes_GpuMat(void* srcPrt, void* otherPrt, int ** boxes, int totalBoxes, int nameid, bool zeros) {
   cv::gpu::GpuMat* src = static_cast<cv::gpu::GpuMat*>(srcPrt);
+  cv::gpu::GpuMat* other;
+  if(!zeros) {
+    other = static_cast<cv::gpu::GpuMat*>(otherPrt);
+  } else {
+    other = NULL;
+  }
   for(int i = 0; i < totalBoxes; ++i) {
     bbox region;
     region.x1 = boxes[i][0];
     region.y1 = boxes[i][1];
     region.x2 = boxes[i][2];
     region.y2 = boxes[i][3];
-    coverRegion(src->data, src->step, 3, region);
+    if(!zeros){
+      coverRegion(src->data, src->step, other->data, other->step, other->rows, other->cols, region, zeros);
+    } else {
+      coverRegion(src->data, src->step, NULL, 0, 0, 0, region, zeros);
+    }
   }
   // Test to check that the covering function is working properly 
-  /*  cv::Mat dst_host2(*src);
+    cv::Mat dst_host2(*src);
     std::stringstream outf2;
     outf2 << "/home/caicedo/what/out_" << nameid << ".jpg";
-    cv::imwrite(outf2.str(), dst_host2); */
+    cv::imwrite(outf2.str(), dst_host2);
 }
 
 // Explicit instantiation

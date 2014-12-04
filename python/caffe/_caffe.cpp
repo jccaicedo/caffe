@@ -182,7 +182,7 @@ void PyNet::ForwardRegionsAndState(bp::list boxes, int context_pad, bp::list sta
   CUDA_CHECK(cudaFree(dev_blob)); 
 }
 
-void PyNet::CoverRegions(bp::list boxes, int nameid){
+void PyNet::CoverRegions(bp::list boxes, const string& otherImage, int nameid){
   int totalBoxes = len(boxes);
   // Prepare boxes coordinates
   int ** data;
@@ -195,7 +195,16 @@ void PyNet::CoverRegions(bp::list boxes, int nameid){
     }
   }
   // Cover boxes in the GPU image
-  CoverBoxes_GpuMat(dev_src_image_, data, totalBoxes, nameid);
+  string empty("");
+  if (empty.compare(otherImage) != 0) {
+    void* prt = LoadImageToGpuMat(otherImage);
+    cv::gpu::GpuMat* dev_other = static_cast<cv::gpu::GpuMat*>(prt);
+    CoverBoxes_GpuMat(dev_src_image_, dev_other, data, totalBoxes, nameid, false);
+    dev_other->release();
+    delete dev_other;
+  } else {
+    CoverBoxes_GpuMat(dev_src_image_, NULL, data, totalBoxes, nameid, true);
+  }
 
   // Free temporary memory
   for(int j = 0; j < totalBoxes; ++j) delete data[j];
