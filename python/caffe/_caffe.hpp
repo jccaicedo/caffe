@@ -107,6 +107,7 @@ class PyNet {
   bp::list InitializeImage(const string& imageName, int imageSize, bp::object meanImg, int cropsize);
   void ReleaseImageData();
   void ForwardRegions(bp::list boxes, int context_pad /*, const string& imageName*/);
+  void ForwardRegionsOnSource(bp::list boxes, int context_pad, int src /*, const string& imageName*/);
   void ForwardRegionsAndState(bp::list boxes, int context_pad, bp::list state /*, const string& imageName*/);
   void CoverRegions(bp::list boxes, const string& otherImage, int nameid);
 
@@ -177,6 +178,7 @@ class PyNet {
   float* dev_mean_image_;
   int cropsize_;
   cv::gpu::GpuMat* dev_src_image_;
+  //cv::gpu::GpuMat* dev_stt_image_;
 
 };
 

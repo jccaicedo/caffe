@@ -100,6 +100,8 @@ bp::list PyNet::InitializeImage(const string& imageName, int imageSize, bp::obje
   CUDA_CHECK( cudaMemcpy(dev_mean_image_, PyArray_DATA(arr), sizeof(float) * imageSize * imageSize * 3, cudaMemcpyHostToDevice) );
   void* prt = LoadImageToGpuMat(imageName);
   dev_src_image_ = static_cast<cv::gpu::GpuMat*>(prt);
+  //void* ptt = LoadImageToGpuMat(imageName);
+  //dev_stt_image_ = static_cast<cv::gpu::GpuMat*>(ptt);
   bp::list dims;
   dims.append(dev_src_image_->rows);
   dims.append(dev_src_image_->cols);
@@ -109,10 +111,16 @@ bp::list PyNet::InitializeImage(const string& imageName, int imageSize, bp::obje
 void PyNet::ReleaseImageData() {
   CUDA_CHECK(cudaFree(dev_mean_image_));
   dev_src_image_->release();
+  //dev_stt_image_->release();
   delete dev_src_image_;
+  //delete dev_stt_image_;
 }
 
-void PyNet::ForwardRegions(bp::list boxes, int context_pad /*, const string& imageName*/){
+void PyNet::ForwardRegions(bp::list boxes, int context_pad) {
+  ForwardRegionsOnSource(boxes, context_pad, 0);
+}
+
+void PyNet::ForwardRegionsOnSource(bp::list boxes, int context_pad, int src /*, const string& imageName*/){
   int totalBoxes = len(boxes);
   vector<Blob<float>*>& input_blobs = net_->input_blobs();
   // Prepare boxes coordinates
@@ -126,7 +134,12 @@ void PyNet::ForwardRegions(bp::list boxes, int context_pad /*, const string& ima
     }
   }
   // Crop and Resize boxes in the GPU
-  float* dev_blob = CropAndResizeBoxes_GpuMat<float>(dev_src_image_, data, totalBoxes, context_pad, cropsize_, dev_mean_image_);
+  float* dev_blob;
+  if (src == 0) {
+    dev_blob = CropAndResizeBoxes_GpuMat<float>(dev_src_image_, data, totalBoxes, context_pad, cropsize_, dev_mean_image_);
+  } else {
+    //dev_blob = CropAndResizeBoxes_GpuMat<float>(dev_stt_image_, data, totalBoxes, context_pad, cropsize_, dev_mean_image_);
+  }
   //float* dev_blob = CropAndResizeBoxes_Debug<float>(imageName, data, totalBoxes, context_pad, cropsize_, dev_mean_image_);
 
   // Copy data to the network
@@ -276,6 +289,7 @@ BOOST_PYTHON_MODULE(_caffe) {
       .def("set_phase_test",        &PyNet::set_phase_test)
       .def("set_device",            &PyNet::set_device)
       .def("ForwardRegions",        &PyNet::ForwardRegions)
+      .def("ForwardRegionsOnSource",&PyNet::ForwardRegionsOnSource)
       .def("ForwardRegionsAndState",&PyNet::ForwardRegionsAndState)
       .def("InitializeImage",       &PyNet::InitializeImage)
       .def("ReleaseImageData",      &PyNet::ReleaseImageData)

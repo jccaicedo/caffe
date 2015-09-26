@@ -166,10 +166,10 @@ void CoverBoxes_GpuMat(void* srcPrt, void* otherPrt, int ** boxes, int totalBoxe
     }
   }
   // Test to check that the covering function is working properly 
-    cv::Mat dst_host2(*src);
-    std::stringstream outf2;
-    outf2 << "/home/caicedo/what/out_" << nameid << ".jpg";
-    cv::imwrite(outf2.str(), dst_host2);
+  //  cv::Mat dst_host2(*src);
+  //  std::stringstream outf2;
+  //  outf2 << "/home/jccaicedo/what/out_" << nameid << ".jpg";
+  //  cv::imwrite(outf2.str(), dst_host2);
 }
 
 // Explicit instantiation
